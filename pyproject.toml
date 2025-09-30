@@ -5,7 +5,12 @@ description = "crate-tools package"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-dependencies = []
+dependencies = [
+    "cyclopts>=2.9",
+    "markdown-it-py>=3,<4",
+    "plumbum>=1.8",
+    "tomlkit==0.13.*",
+]
 
 [dependency-groups]
 dev = [
