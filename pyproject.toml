@@ -8,7 +8,7 @@ license = { text = "MIT" }
 dependencies = [
     "cyclopts>=2.9",
     "markdown-it-py>=3,<4",
-    "plumbum",
+    "plumbum>=1.8",
     "tomlkit==0.13.*",
 ]
 
