@@ -104,6 +104,7 @@ def apply_replacements(
     >>> apply_replacements('rstest-bdd', tmp, '1.2.3')
     >>> 'version = "1.2.3"' in tmp.read_text()
     True
+
     """
     document = parse(manifest.read_text(encoding="utf-8"))
     patches = REPLACEMENTS.get(crate)
@@ -168,6 +169,7 @@ def update_dependency(
     ... )
     >>> dict(doc['dependencies']['foo'])['version']
     '1.0.0'
+
     """
     try:
         section = document[patch.section]
@@ -208,6 +210,7 @@ def extract_existing_items(value: object) -> tuple[tuple[str, object], ...]:
     >>> items = extract_existing_items(table['dependencies']['foo'])
     >>> dict(items)
     {'default-features': False}
+
     """
     if isinstance(value, (Table, InlineTable)):
         return tuple(
@@ -252,6 +255,7 @@ def build_inline_dependency(
     {'path': '../foo', 'version': '1.0.0'}
     >>> dict(build_inline_dependency((), '../foo', '1.0.0', include_local_path=False))
     {'version': '1.0.0'}
+
     """
     dependency = inline_table()
     if include_local_path:
@@ -301,6 +305,7 @@ def main() -> None:
     ...     sys.argv = argv
     >>> 'version = "1.2.3"' in tmp.read_text()
     True
+
     """
     parser = argparse.ArgumentParser(
         description="Adjust workspace manifests for publish-check packaging."

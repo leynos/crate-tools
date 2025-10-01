@@ -19,6 +19,7 @@ Run with custom timeout and workspace preservation::
 
     PUBLISH_CHECK_TIMEOUT_SECS=1200 PUBLISH_CHECK_KEEP_TMP=1 \
         python scripts/run_publish_check.py
+
 """
 
 # /// script
@@ -83,8 +84,8 @@ DEFAULT_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
 )
 
 LOCKED_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
-    ("cargo", "publish", "--dry-run", "--locked"),
-    ("cargo", "publish", "--locked"),
+    ("cargo", "publish", "--dry-run"),
+    ("cargo", "publish"),
 )
 
 LIVE_PUBLISH_COMMANDS: typ.Final[dict[str, tuple[Command, ...]]] = {
@@ -174,6 +175,7 @@ def build_cargo_command_context(
     >>> context = build_cargo_command_context("tools", Path("/tmp/workspace"))
     >>> context.crate
     'tools'
+
     """
     crate_dir = workspace_root / "crates" / crate
     env_overrides = {"CARGO_HOME": str(workspace_root / ".cargo-home")}
@@ -257,6 +259,7 @@ def _handle_command_failure(
     result
         The :class:`CommandResult` describing the invocation, including the
         resolved command line and captured output streams.
+
     """
     joined_command = shlex.join(result.command)
     LOGGER.error("cargo command failed for %s: %s", crate, joined_command)
@@ -312,6 +315,7 @@ def run_cargo_command(
     is omitted the ``PUBLISH_CHECK_TIMEOUT_SECS`` environment variable is
     consulted before falling back to the default. On failure the captured
     stdout and stderr are logged to aid debugging in CI environments.
+
     """
     _validate_cargo_command(command)
 
@@ -467,6 +471,7 @@ def publish_crate_commands(
     SystemExit
         Raised when ``crate`` has no live command sequence configured. The
         workflow aborts to avoid silently skipping new crates.
+
     """
     try:
         commands = LIVE_PUBLISH_COMMANDS[crate]
@@ -500,6 +505,7 @@ class CrateProcessingConfig:
         crate rather than once for the entire workspace.
     per_crate_cleanup : Callable[[Path, str], None] | None, optional
         Cleanup action executed after each crate has been processed.
+
     """
 
     strip_patch: bool
@@ -545,6 +551,7 @@ def _process_crates(
         ...     config,
         ...     lambda crate, *_: None,
         ... )
+
     """
     if not CRATE_ORDER:
         message = "CRATE_ORDER must not be empty"
@@ -594,6 +601,7 @@ def _process_crates_for_live_publish(workspace: Path, timeout_secs: int) -> None
 
         >>> tmp = Path("/tmp/workspace")  # doctest: +SKIP
         >>> _process_crates_for_live_publish(tmp, 900)  # doctest: +SKIP
+
     """
     config = CrateProcessingConfig(
         strip_patch=False,
@@ -621,6 +629,7 @@ def _process_crates_for_check(workspace: Path, timeout_secs: int) -> None:
 
         >>> tmp = Path("/tmp/workspace")  # doctest: +SKIP
         >>> _process_crates_for_check(tmp, 900)  # doctest: +SKIP
+
     """
 
     def _crate_action(crate: str, root: Path, *, timeout_secs: int) -> None:
@@ -650,6 +659,7 @@ def run_publish_check(*, keep_tmp: bool, timeout_secs: int, live: bool = False) 
 
         >>> run_publish_check(keep_tmp=True, timeout_secs=120)
         preserving workspace at /tmp/...  # doctest: +ELLIPSIS
+
     """
     if timeout_secs <= 0:
         message = "timeout-secs must be a positive integer"
@@ -708,6 +718,7 @@ def main(
     -------
     None
         This function executes for its side effects and returns ``None``.
+
     """
     run_publish_check(keep_tmp=keep_tmp, timeout_secs=timeout_secs, live=live)
 

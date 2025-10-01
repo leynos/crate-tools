@@ -13,16 +13,17 @@ Examples
 --------
 Run with the desired semantic version:
     ./scripts/bump_version.py 1.2.3
+
 """
+
 from __future__ import annotations
 
 import os
 import re
 import sys
 import tempfile
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
-from typing import Callable
 
 import tomlkit
 from markdown_it import MarkdownIt
@@ -40,6 +41,7 @@ def _is_matching_fence_token(tok, lang: str) -> bool:
     >>> tok = MarkdownIt("commonmark").parse(md)[0]
     >>> _is_matching_fence_token(tok, 'toml')
     True
+
     """
     if tok.type != "fence":
         return False
@@ -54,6 +56,7 @@ def _extract_fence_indent(opening_line: str, fence_marker: str) -> str:
     --------
     >>> _extract_fence_indent('  ```toml', '```')
     '  '
+
     """
     pos = opening_line.find(fence_marker)
     return "" if pos < 0 else opening_line[:pos]
@@ -79,6 +82,7 @@ def _process_fence_token(
     ... )
     >>> result == '```toml\\nFOO\\n```\\n'
     True
+
     """
     start, _ = tok.map
     fence_marker = tok.markup or "```"
@@ -89,9 +93,7 @@ def _process_fence_token(
     m = re.search(r"(\r?\n+)$", original_body)
     suffix = m.group(1) if m else ""
     new_body = new_body.rstrip("\r\n") + suffix
-    indented = "".join(
-        f"{indent}{line}" for line in new_body.splitlines(keepends=True)
-    )
+    indented = "".join(f"{indent}{line}" for line in new_body.splitlines(keepends=True))
     return f"{indent}{fence_marker}{info}\n{indented}{indent}{fence_marker}\n"
 
 
@@ -117,6 +119,7 @@ def replace_fences(md_text: str, lang: str, replace_fn: Callable[[str], str]) ->
     >>> replaced = replace_fences(md, 'toml', lambda body: body.replace('1', '2'))
     >>> replaced == '```toml\\n[dependencies]\\nfoo = "2"\\n```\\n'
     True
+
     """
     md = MarkdownIt("commonmark")
     tokens = md.parse(md_text)
@@ -146,6 +149,7 @@ def _update_package_version(
     >>> _update_package_version(data, "1")
     >>> data["package"]["version"]
     '1'
+
     """
     if "workspace" in doc and "package" in doc["workspace"]:
         doc["workspace"]["package"]["version"] = version
@@ -166,6 +170,7 @@ def _extract_version_prefix(
     '^'
     >>> _extract_version_prefix("1")
     ''
+
     """
     if isinstance(entry, Mapping):
         entry = entry.get("version")
@@ -187,6 +192,7 @@ def _update_dict_dependency(
     >>> _update_dict_dependency(entry, "1.2.3")
     >>> tomlkit.dumps(entry).strip()
     'version = "^1.2.3"'
+
     """
     if bool(entry.get("workspace")) is True:
         return
@@ -194,7 +200,7 @@ def _update_dict_dependency(
     existing = entry.get("version")
     if isinstance(existing, tomlkit.items.String):
         try:
-            setattr(existing, "value", prefix + version)
+            existing.value = prefix + version
         except AttributeError:  # tomlkit <0.14 lacks a value setter
             existing._original = prefix + version
     else:
@@ -216,11 +222,12 @@ def _update_string_dependency(
     >>> _update_string_dependency(doc, 'foo', doc['foo'], '1.2.3')
     >>> tomlkit.dumps(doc).strip()
     'foo = "^1.2.3"'
+
     """
     prefix = _extract_version_prefix(entry)
     if isinstance(entry, tomlkit.items.String):
         try:
-            setattr(entry, "value", prefix + version)
+            entry.value = prefix + version
         except AttributeError:  # tomlkit <0.14 lacks a value setter
             entry._original = prefix + version
     else:
@@ -242,6 +249,7 @@ def _update_dependency_in_table(
     >>> _update_dependency_in_table(doc['dependencies'], 'foo', '1.2.3')
     >>> 'foo = "^1.2.3"' in tomlkit.dumps(doc)
     True
+
     """
     entry = deps[dependency]
     if isinstance(entry, Mapping):
@@ -280,6 +288,7 @@ def _update_dependency_version(
     >>> _update_dependency_version(doc, 'foo', '1.2.3')
     >>> 'foo = "^1.2.3"' in tomlkit.dumps(doc)
     True
+
     """
     for table in ("dependencies", "dev-dependencies", "build-dependencies"):
         deps = doc.get(table)
@@ -306,6 +315,7 @@ def _set_version(
         Optional dependency to update alongside the package version.
     doc
         Pre-parsed document to update. If provided, the file is not re-read.
+
     """
     if doc is None:
         with toml_path.open("r", encoding="utf-8") as fh:
@@ -345,6 +355,7 @@ def _validate_args_and_setup(argv: list[str]) -> tuple[str, Path] | None:
     >>> version, root = _validate_args_and_setup(["bump_version.py", "1.2.3"])
     >>> (version, isinstance(root, Path))
     ('1.2.3', True)
+
     """
     if len(argv) != 2:
         prog = Path(argv[0]).name
@@ -375,6 +386,7 @@ def _resolve_member_paths(root: Path, members: list[str]) -> list[Path]:
     --------
     >>> [path.as_posix() for path in _resolve_member_paths(Path('.'), ['scripts'])]
     ['scripts']
+
     """
     paths: list[Path] = []
     for pattern in members:
@@ -418,6 +430,7 @@ def _update_member_version(member_path: Path, version: str) -> bool:
     ...     result = _update_member_version(cargo_toml, "1.2.3")
     ...     cargo_toml.read_text(), result
     ('[package]\\nname = "demo"\\nversion = "1.2.3"\\n', False)
+
     """
     try:
         # Derive from the actual package name to avoid coupling to directory names
@@ -459,10 +472,9 @@ def _process_single_member(member_root: Path, version: str) -> bool:
     --------
     >>> _process_single_member(Path('scripts'), '1.2.3')
     False
+
     """
-    member_path = (
-        member_root / "Cargo.toml" if member_root.is_dir() else member_root
-    )
+    member_path = member_root / "Cargo.toml" if member_root.is_dir() else member_root
     if not member_path.exists():
         print(
             f"Warning: Skipping missing member Cargo.toml at {member_path}",
@@ -493,6 +505,7 @@ def _process_members(root: Path, members: list[str], version: str) -> bool:
     --------
     >>> _process_members(Path('.'), ['scripts'], '1.2.3')
     False
+
     """
     had_error = False
     for member_root in _resolve_member_paths(root, members):
@@ -513,6 +526,7 @@ def replace_version_in_toml(snippet: str, version: str) -> str:
     >>> replace_version_in_toml('''[dependencies]
     ... ortho_config = "0"''', '1') == '[dependencies]\\northo_config = "1"'
     True
+
     """
     try:
         doc = tomlkit.parse(snippet)
@@ -553,17 +567,19 @@ def _update_markdown_versions(md_path: Path, version: str) -> None:
     ...     _update_markdown_versions(md_path, '1')
     ...     'ortho_config = "1"' in md_path.read_text(encoding='utf-8')
     True
+
     """
     if not md_path.exists():
         return
     text = md_path.read_text(encoding="utf-8")
-    updated = replace_fences(text, "toml", lambda body: replace_version_in_toml(body, version))
+    updated = replace_fences(
+        text, "toml", lambda body: replace_version_in_toml(body, version)
+    )
     md_path.write_text(updated, encoding="utf-8")
 
 
 def main(argv: list[str]) -> int:
-    """
-    Update the workspace and member crate versions to the supplied value.
+    """Update the workspace and member crate versions to the supplied value.
 
     Parameters
     ----------
@@ -581,6 +597,7 @@ def main(argv: list[str]) -> int:
     --------
     >>> main(["bump_version.py", "1.2.3"])  # doctest: +SKIP
     0
+
     """
     result = _validate_args_and_setup(argv)
     if result is None:
@@ -590,7 +607,12 @@ def main(argv: list[str]) -> int:
     try:
         with workspace.open("r", encoding="utf-8") as fh:
             data = tomlkit.parse(fh.read())
-    except (TOMLKitError, OSError, TypeError, ValueError) as exc:  # pragma: no cover - defensive
+    except (
+        TOMLKitError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:  # pragma: no cover - defensive
         print(f"Error: Failed to parse {workspace}: {exc}", file=sys.stderr)
         return 1
     members = data.get("workspace", {}).get("members", [])
@@ -612,6 +634,7 @@ def main(argv: list[str]) -> int:
                 file=sys.stderr,
             )
     return 0 if not had_error else 1
+
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main(sys.argv))

@@ -5,10 +5,11 @@ publish automation. They deliberately keep filesystem side effects scoped to the
 provided destination so callers can stage archives without mutating the working
 copy.
 
-Example
+Example:
 -------
 >>> from pathlib import Path
 >>> export_workspace(Path("/tmp/release-staging"))
+
 """
 
 from __future__ import annotations
@@ -106,6 +107,7 @@ def export_workspace(destination: Path) -> None:
     None
         The repository snapshot is written directly to ``destination`` and the
         export honours ``GIT_ARCHIVE_TIMEOUT_S`` to bound ``git`` execution.
+
     """
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)

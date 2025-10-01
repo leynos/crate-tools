@@ -55,21 +55,18 @@ def apply_workspace_replacements(
     --------
     >>> from pathlib import Path
     >>> apply_workspace_replacements(Path("."), "1.2.3", include_local_path=False)
+
     """
     workspace_root = Path(workspace_root)
+    unknown: set[str] = set()
     if crates is None:
         targets: typ.Final[tuple[str, ...]] = tuple(REPLACEMENTS)
-        unknown: set[str] = set()
     else:
         unknown = {crate for crate in crates if crate not in REPLACEMENTS}
-        if unknown:
-            formatted = ", ".join(sorted(unknown))
-            LOGGER.warning(
-                "Skipping crates without replacement configuration: %s",
-                formatted,
-            )
-        targets = tuple(crate for crate in crates if crate not in unknown)
+        targets = crates
     for crate in targets:
+        if crate in unknown:
+            continue
         manifest = workspace_root / "crates" / crate / "Cargo.toml"
         apply_replacements(
             crate,

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
+import publish_workspace_dependencies as dependencies
 import pytest
 
-import publish_workspace_dependencies as dependencies
 
-
-@pytest.fixture()
+@pytest.fixture
 def workspace_root(tmp_path: Path) -> Path:
     """Create a temporary workspace layout for dependency rewrites."""
     workspace = tmp_path / "workspace"
@@ -42,13 +40,12 @@ def _write_rstest_manifest(crate_dir: Path) -> None:
 class TestApplyWorkspaceReplacements:
     """Unit and behavioural coverage for dependency replacement workflows."""
 
-    def test_warns_and_skips_unknown_crates(
+    def test_skips_unknown_crates(
         self,
         workspace_root: Path,
         monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Log a warning when explicit crate lists contain unknown entries."""
+        """Ignore crates without replacement configuration."""
         crate_dir = workspace_root / "crates" / "rstest-bdd"
         crate_dir.mkdir()
         (crate_dir / "Cargo.toml").write_text("", encoding="utf-8")
@@ -65,7 +62,6 @@ class TestApplyWorkspaceReplacements:
             captured.append((crate, manifest, version, include_local_path))
 
         monkeypatch.setattr(dependencies, "apply_replacements", fake_apply)
-        caplog.set_level(logging.WARNING)
 
         dependencies.apply_workspace_replacements(
             workspace_root,
@@ -76,19 +72,16 @@ class TestApplyWorkspaceReplacements:
 
         expected_manifest = crate_dir / "Cargo.toml"
         assert captured == [("rstest-bdd", expected_manifest, "1.2.3", False)]
-        assert "unknown-crate" in caplog.text
+        assert not any(crate == "unknown-crate" for crate, *_ in captured)
 
     def test_updates_known_crates_when_unknown_requested(
         self,
         workspace_root: Path,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Behavioural test covering the manifest rewrite flow."""
         crate_dir = workspace_root / "crates" / "rstest-bdd"
         crate_dir.mkdir()
         _write_rstest_manifest(crate_dir)
-
-        caplog.set_level(logging.WARNING)
 
         dependencies.apply_workspace_replacements(
             workspace_root,
@@ -100,4 +93,5 @@ class TestApplyWorkspaceReplacements:
         manifest_text = (crate_dir / "Cargo.toml").read_text(encoding="utf-8")
         assert manifest_text.count('version = "2.0.0"') == 2
         assert "rstest-bdd-patterns" in manifest_text
-        assert "unknown-crate" in caplog.text
+        # Unknown crates are ignored entirely when replacements are missing.
+        assert "unknown-crate = " not in manifest_text

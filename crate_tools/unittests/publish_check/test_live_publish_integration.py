@@ -37,6 +37,7 @@ class TestRunPublishCheckLiveMode:
         -------
         tuple[Path, Path]
             The workspace directory and its manifest path.
+
         """
         workspace_dir = tmp_path / "live"
         workspace_dir.mkdir()
@@ -74,6 +75,7 @@ class TestRunPublishCheckLiveMode:
         tuple
             Recorded workspace steps and cargo invocations, including the
             resolved cargo contexts and optional failure callbacks.
+
         """
         steps, record = self._setup_recording_infrastructure()
         fake_apply, fake_remove = self._create_fake_functions(steps)
@@ -236,6 +238,7 @@ class TestRunPublishCheckLiveMode:
             Workspace directory that should be removed after execution.
         manifest:
             Workspace manifest used for assertions.
+
         """
         assert steps[:2] == [
             ("export", workspace_dir),

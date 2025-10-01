@@ -18,7 +18,7 @@ from scripts.bump_version import (
 @pytest.mark.parametrize(
     "body, expected, extra",
     [
-        ("foo = \"^0.1\"", "foo = \"^1.2.3\"", None),
+        ('foo = "^0.1"', 'foo = "^1.2.3"', None),
         (
             'foo = { version = "~0.1", features = ["a"] }',
             'version = "~1.2.3"',
@@ -39,9 +39,9 @@ def test_updates_dependency_version(
 
 def test_preserves_trailing_comment_on_string_dependency() -> None:
     doc = tomlkit.parse('[dependencies]\nfoo = "^0.1"  # pinned for CI\n')
-    _update_dependency_version(doc, 'foo', '1.2.3')
+    _update_dependency_version(doc, "foo", "1.2.3")
     dumped = tomlkit.dumps(doc)
-    assert '# pinned for CI' in dumped, "must preserve trailing comment on value node"
+    assert "# pinned for CI" in dumped, "must preserve trailing comment on value node"
 
 
 def test_preserves_quote_style_on_string_dependency() -> None:
@@ -56,15 +56,17 @@ def test_preserves_quote_style_on_string_dependency() -> None:
 def test_missing_dependency_no_change() -> None:
     snippet = '[dependencies]\nbar = "0.1"'
     doc = tomlkit.parse(snippet)
-    _update_dependency_version(doc, 'foo', '1.2.3')
-    assert tomlkit.dumps(doc).strip() == snippet, "should be a no-op when dependency is absent"
+    _update_dependency_version(doc, "foo", "1.2.3")
+    assert tomlkit.dumps(doc).strip() == snippet, (
+        "should be a no-op when dependency is absent"
+    )
 
 
 def test_workspace_dependency_no_version_written() -> None:
-    doc = tomlkit.parse('[dependencies]\nfoo = { workspace = true }\n')
-    _update_dependency_version(doc, 'foo', '1.2.3')
-    deps = doc['dependencies']['foo']
-    assert 'version' not in deps, 'must not add version when workspace is true'
+    doc = tomlkit.parse("[dependencies]\nfoo = { workspace = true }\n")
+    _update_dependency_version(doc, "foo", "1.2.3")
+    deps = doc["dependencies"]["foo"]
+    assert "version" not in deps, "must not add version when workspace is true"
 
 
 @pytest.mark.parametrize(
@@ -122,7 +124,9 @@ ortho_config = { version = \"0.5.0-beta1\", features = [\"json5\", \"yaml\"] }
     _update_markdown_versions(md_path, "0.5.0")
 
     updated_lines = md_path.read_text().splitlines()
-    assert 'version = "0.5.0"' in "\n".join(updated_lines), "must bump version inside TOML fence"
+    assert 'version = "0.5.0"' in "\n".join(updated_lines), (
+        "must bump version inside TOML fence"
+    )
     assert updated_lines[-2] == (
         "# Enabling these features expands file formats; precedence stays: "
         "defaults < file < env < CLI."
@@ -133,11 +137,11 @@ ortho_config = { version = \"0.5.0-beta1\", features = [\"json5\", \"yaml\"] }
 @pytest.mark.parametrize(
     "snippet, expected_suffix",
     [
-        ("[dependencies]\northo_config = \"0\"\n", "\n"),
-        ("[dependencies]\northo_config = \"0\"\r\n", "\r\n"),
-        ("[dependencies]\northo_config = \"0\"\n\n", "\n\n"),
-        ("[dependencies]\northo_config = \"0\"\r\n\r\n", "\r\n\r\n"),
-        ("[dependencies]\northo_config = \"0\"", ""),
+        ('[dependencies]\northo_config = "0"\n', "\n"),
+        ('[dependencies]\northo_config = "0"\r\n', "\r\n"),
+        ('[dependencies]\northo_config = "0"\n\n', "\n\n"),
+        ('[dependencies]\northo_config = "0"\r\n\r\n', "\r\n\r\n"),
+        ('[dependencies]\northo_config = "0"', ""),
     ],
 )
 def test_replace_version_in_toml_preserves_suffix(
@@ -153,11 +157,11 @@ def test_replace_version_in_toml_preserves_suffix(
 @pytest.mark.parametrize(
     "snippet",
     [
-        "[dependencies]\nfoo = \"0\"\n",
-        "[dependencies]\nfoo = \"0\"\r\n",
-        "[dependencies]\nfoo = \"0\"\n\n",
-        "[dev-dependencies]\nfoo = \"0\"",
-        "[build-dependencies]\nfoo = \"0\"\r\n",
+        '[dependencies]\nfoo = "0"\n',
+        '[dependencies]\nfoo = "0"\r\n',
+        '[dependencies]\nfoo = "0"\n\n',
+        '[dev-dependencies]\nfoo = "0"',
+        '[build-dependencies]\nfoo = "0"\r\n',
     ],
 )
 def test_replace_version_in_toml_no_dependency_returns_input(snippet: str) -> None:
