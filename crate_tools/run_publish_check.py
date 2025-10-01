@@ -72,29 +72,13 @@ class CrateAction(typ.Protocol):
 
 CRATE_ORDER: typ.Final[tuple[str, ...]] = PUBLISHABLE_CRATES
 
-LOCKED_LIVE_CRATES: typ.Final[frozenset[str]] = frozenset({"cargo-bdd"})
-
-DEFAULT_LIVE_CRATES: typ.Final[tuple[str, ...]] = tuple(
-    crate for crate in PUBLISHABLE_CRATES if crate not in LOCKED_LIVE_CRATES
-)
-
-DEFAULT_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
-    ("cargo", "publish", "--dry-run"),
-    ("cargo", "publish"),
-)
-
-LOCKED_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
+LIVE_PUBLISH_COMMANDS_SEQUENCE: typ.Final[tuple[Command, ...]] = (
     ("cargo", "publish", "--dry-run"),
     ("cargo", "publish"),
 )
 
 LIVE_PUBLISH_COMMANDS: typ.Final[dict[str, tuple[Command, ...]]] = {
-    crate: (
-        LOCKED_LIVE_PUBLISH_COMMANDS
-        if crate in LOCKED_LIVE_CRATES
-        else DEFAULT_LIVE_PUBLISH_COMMANDS
-    )
-    for crate in PUBLISHABLE_CRATES
+    crate: LIVE_PUBLISH_COMMANDS_SEQUENCE for crate in PUBLISHABLE_CRATES
 }
 
 ALREADY_PUBLISHED_MARKERS: typ.Final[tuple[str, ...]] = (

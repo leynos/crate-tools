@@ -63,6 +63,11 @@ def apply_workspace_replacements(
         targets: typ.Final[tuple[str, ...]] = tuple(REPLACEMENTS)
     else:
         unknown = {crate for crate in crates if crate not in REPLACEMENTS}
+        if unknown:
+            formatted = ", ".join(sorted(unknown))
+            LOGGER.warning(
+                "Skipping crates without replacement entries: %s", formatted
+            )
         targets = crates
     for crate in targets:
         if crate in unknown:

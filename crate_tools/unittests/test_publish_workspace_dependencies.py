@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import typing as typ
 
 import publish_workspace_dependencies as dependencies
 import pytest
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -44,6 +47,7 @@ class TestApplyWorkspaceReplacements:
         self,
         workspace_root: Path,
         monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Ignore crates without replacement configuration."""
         crate_dir = workspace_root / "crates" / "rstest-bdd"
@@ -63,16 +67,19 @@ class TestApplyWorkspaceReplacements:
 
         monkeypatch.setattr(dependencies, "apply_replacements", fake_apply)
 
-        dependencies.apply_workspace_replacements(
-            workspace_root,
-            "1.2.3",
-            include_local_path=False,
-            crates=("rstest-bdd", "unknown-crate"),
-        )
+        with caplog.at_level("WARNING"):
+            dependencies.apply_workspace_replacements(
+                workspace_root,
+                "1.2.3",
+                include_local_path=False,
+                crates=("rstest-bdd", "unknown-crate"),
+            )
 
         expected_manifest = crate_dir / "Cargo.toml"
         assert captured == [("rstest-bdd", expected_manifest, "1.2.3", False)]
         assert not any(crate == "unknown-crate" for crate, *_ in captured)
+        assert "Skipping crates without replacement entries" in caplog.text
+        assert "unknown-crate" in caplog.text
 
     def test_updates_known_crates_when_unknown_requested(
         self,
