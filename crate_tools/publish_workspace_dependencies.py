@@ -8,7 +8,6 @@ references in a single place.
 from __future__ import annotations
 
 import logging
-import typing as typ
 from pathlib import Path
 
 from publish_patch import REPLACEMENTS, apply_replacements
@@ -17,6 +16,19 @@ __all__ = ["apply_workspace_replacements"]
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _compute_valid_targets(
+    crates: tuple[str, ...] | None,
+) -> tuple[tuple[str, ...], set[str]]:
+    """Determine which crates should receive replacement updates."""
+
+    if crates is None:
+        return tuple(REPLACEMENTS), set()
+
+    unknown = {crate for crate in crates if crate not in REPLACEMENTS}
+    valid = tuple(crate for crate in crates if crate in REPLACEMENTS)
+    return valid, unknown
 
 
 def apply_workspace_replacements(
@@ -56,18 +68,11 @@ def apply_workspace_replacements(
 
     """
     workspace_root = Path(workspace_root)
-    unknown: set[str] = set()
-    if crates is None:
-        targets: typ.Final[tuple[str, ...]] = tuple(REPLACEMENTS)
-    else:
-        unknown = {crate for crate in crates if crate not in REPLACEMENTS}
-        if unknown:
-            formatted = ", ".join(sorted(unknown))
-            LOGGER.warning("Skipping crates without replacement entries: %s", formatted)
-        targets = crates
+    targets, unknown = _compute_valid_targets(crates)
+    if unknown:
+        formatted = ", ".join(sorted(unknown))
+        LOGGER.warning("Skipping crates without replacement entries: %s", formatted)
     for crate in targets:
-        if crate in unknown:
-            continue
         manifest = workspace_root / "crates" / crate / "Cargo.toml"
         apply_replacements(
             crate,
