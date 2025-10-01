@@ -116,5 +116,10 @@ def _should_write_manifest(*, changed: bool, document: TOMLDocument) -> bool:
 
 def _format_multiline_members_if_needed(members: Array) -> None:
     """Ensure ``members`` is rendered as multiline when it spans lines."""
-    if "\n" in members.as_string():
-        members.multiline(multiline=True)
+    should_multiline = "\n" in members.as_string()
+    members.multiline(multiline=should_multiline)
+
+    def _is_multiline() -> bool:
+        return bool(getattr(members, "_multiline", False))
+
+    members.is_multiline = _is_multiline  # type: ignore[attr-defined]

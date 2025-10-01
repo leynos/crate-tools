@@ -59,13 +59,22 @@ def _find_workspace_section_index(lines: list[str]) -> int | None:
 
 def _extract_section_lines(lines: list[str], workspace_index: int) -> list[str]:
     """Extract lines around the workspace section for diagnostics."""
-    start = max(workspace_index - 1, 0)
+    header_index = _previous_section_header(lines, workspace_index)
+    start = header_index if header_index is not None else workspace_index
     end = workspace_index + 1
 
     while _should_include_more_lines(lines, end, start):
         end += 1
 
-    return lines[start:end]
+    if header_index is None:
+        return lines[start:end]
+
+    excerpt: list[str] = [lines[header_index]]
+    for cursor in range(header_index + 1, workspace_index):
+        if not lines[cursor].strip():
+            excerpt.append(lines[cursor])
+    excerpt.extend(lines[workspace_index:end])
+    return excerpt
 
 
 def _should_include_more_lines(lines: list[str], end: int, start: int) -> bool:
@@ -77,7 +86,24 @@ def _should_include_more_lines(lines: list[str], end: int, start: int) -> bool:
         return False
 
     stripped = lines[end].strip()
+    if not stripped:
+        next_index = end + 1
+        if next_index < len(lines):
+            next_line = lines[next_index].strip()
+            if next_line.startswith("[") and not next_line.startswith("[workspace"):
+                return False
     is_non_workspace_section = stripped.startswith("[") and not stripped.startswith(
         "[workspace"
     )
     return not is_non_workspace_section
+
+
+def _previous_section_header(lines: list[str], workspace_index: int) -> int | None:
+    """Return the index of the section header preceding ``workspace_index``."""
+    for index in range(workspace_index - 1, -1, -1):
+        stripped = lines[index].strip()
+        if not stripped:
+            continue
+        if stripped.startswith("["):
+            return index
+    return None

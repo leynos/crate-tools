@@ -1,0 +1,10 @@
+[workspace]
+members = [
+  "crates/rstest-bdd",
+  "crates/rstest-bdd-macros",
+  "crates/rstest-bdd-patterns",
+  "crates/cargo-bdd"
+]
+
+[workspace.package]
+version = "0.0.0"
