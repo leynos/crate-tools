@@ -83,8 +83,8 @@ DEFAULT_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
 )
 
 LOCKED_LIVE_PUBLISH_COMMANDS: typ.Final[tuple[Command, ...]] = (
-    ("cargo", "publish", "--dry-run"),
-    ("cargo", "publish"),
+    ("cargo", "publish", "--dry-run", "--locked"),
+    ("cargo", "publish", "--locked"),
 )
 
 LIVE_PUBLISH_COMMANDS: typ.Final[dict[str, tuple[Command, ...]]] = {

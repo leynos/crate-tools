@@ -7,12 +7,16 @@ references in a single place.
 
 from __future__ import annotations
 
+import logging
 import typing as typ
 from pathlib import Path
 
 from publish_patch import REPLACEMENTS, apply_replacements
 
 __all__ = ["apply_workspace_replacements"]
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def apply_workspace_replacements(
@@ -44,8 +48,8 @@ def apply_workspace_replacements(
     Raises
     ------
     SystemExit
-        Raised when any supplied crate lacks a replacement configuration or a
-        manifest cannot be rewritten due to a missing replacement entry.
+        Raised when a manifest cannot be rewritten due to a missing replacement
+        entry.
 
     Examples
     --------
@@ -58,10 +62,14 @@ def apply_workspace_replacements(
         unknown: set[str] = set()
     else:
         unknown = {crate for crate in crates if crate not in REPLACEMENTS}
-        targets = crates
+        if unknown:
+            formatted = ", ".join(sorted(unknown))
+            LOGGER.warning(
+                "Skipping crates without replacement configuration: %s",
+                formatted,
+            )
+        targets = tuple(crate for crate in crates if crate not in unknown)
     for crate in targets:
-        if crate in unknown:
-            continue
         manifest = workspace_root / "crates" / crate / "Cargo.toml"
         apply_replacements(
             crate,
