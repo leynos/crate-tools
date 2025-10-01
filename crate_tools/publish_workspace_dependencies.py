@@ -68,6 +68,7 @@ def apply_workspace_replacements(
 
     """
     workspace_root = Path(workspace_root)
+    unknown: set[str] = set()
     targets, unknown = _compute_valid_targets(crates)
     if unknown:
         formatted = ", ".join(sorted(unknown))
