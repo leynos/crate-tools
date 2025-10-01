@@ -28,6 +28,9 @@ def apply_workspace_replacements(
 ) -> None:
     """Rewrite workspace dependency declarations for publish workflows.
 
+    Crates lacking replacement configuration are reported via a warning and left
+    unchanged so publish runs can continue updating the remaining manifests.
+
     Parameters
     ----------
     workspace_root : Path
@@ -38,18 +41,13 @@ def apply_workspace_replacements(
         Toggle whether rewritten dependencies retain their relative path entries.
     crates : tuple[str, ...] | None, optional
         Subset of crates to update; default rewrites every crate with
-        replacements.
+        replacements. Crates without replacement configuration are skipped and
+        left untouched so callers can safely request broader sets.
 
     Returns
     -------
     None
         All matching manifests are rewritten in place.
-
-    Raises
-    ------
-    SystemExit
-        Raised when a manifest cannot be rewritten due to a missing replacement
-        entry.
 
     Examples
     --------
