@@ -1,14 +1,15 @@
 """Tests for the version bumping helpers."""
 
-import typing as typ
 from pathlib import Path
 
 import pytest
 import tomlkit
+from tomlkit.exceptions import TOMLKitError
 
 from crate_tools.bump_version import (
     _update_dependency_version,
     _update_markdown_versions,
+    _warn_on_markdown_update_failure,
 )
 from scripts.bump_version import replace_fences, replace_version_in_toml
 
@@ -77,7 +78,7 @@ def test_workspace_dependency_no_version_written() -> None:
 
 
 @pytest.mark.parametrize(
-    ("md_text", "outcome", "description"),
+    ("md_text", "expected_text", "description"),
     [
         pytest.param(
             """pre
@@ -87,7 +88,13 @@ ortho_config = \"0\"
 ```
 post
 """,
-            "update",
+            """pre
+```toml
+[dependencies]
+ortho_config = \"1\"
+```
+post
+""",
             "must update TOML fences",
             id="toml-fence",
         ),
@@ -98,7 +105,12 @@ echo hi
 ```
 post
 """,
-            "preserve",
+            """pre
+```bash
+echo hi
+```
+post
+""",
             "must leave non-TOML fences unchanged",
             id="non-toml-fence",
         ),
@@ -107,22 +119,58 @@ post
 def test_update_markdown_versions_behavior(
     tmp_path: Path,
     md_text: str,
-    outcome: typ.Literal["update", "preserve"],
+    expected_text: str,
     description: str,
 ) -> None:
     """Update Markdown fences only when the language matches TOML."""
-    should_change = outcome == "update"
-
     for rel in ("README.md", "docs/users-guide.md"):
         md_path = tmp_path / rel
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md_text)
         _update_markdown_versions(md_path, "1")
         updated = md_path.read_text()
-        if should_change:
-            assert 'ortho_config = "1"' in updated, description
-        else:
-            assert updated == md_text, description
+        assert updated == expected_text, description
+
+
+def test_warn_on_markdown_update_failure_logs_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Log a warning when Markdown updates raise expected exceptions."""
+
+    def raise_toml_error(path: Path, version: str) -> None:  # pragma: no cover - helper
+        raise TOMLKitError("boom")
+
+    md_path = tmp_path / "README.md"
+    md_path.write_text("content", encoding="utf-8")
+    monkeypatch.setattr(
+        "crate_tools.bump_version._update_markdown_versions",
+        raise_toml_error,
+    )
+    with caplog.at_level("WARNING"):
+        _warn_on_markdown_update_failure(md_path, "2.0.0")
+    assert any(
+        "Failed to update Markdown fence versions" in record.getMessage()
+        for record in caplog.records
+    ), "expected warning log when Markdown update raises TOMLKitError"
+
+
+def test_warn_on_markdown_update_success_is_silent(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Produce no warnings when Markdown updates succeed."""
+
+    def noop(_: Path, __: str) -> None:  # pragma: no cover - helper
+        return
+
+    md_path = tmp_path / "README.md"
+    md_path.write_text("content", encoding="utf-8")
+    monkeypatch.setattr(
+        "crate_tools.bump_version._update_markdown_versions",
+        noop,
+    )
+    with caplog.at_level("WARNING"):
+        _warn_on_markdown_update_failure(md_path, "2.0.0")
+    assert not caplog.records, "no warnings expected when Markdown update succeeds"
 
 
 def test_update_markdown_preserves_trailing_newline(tmp_path: Path) -> None:

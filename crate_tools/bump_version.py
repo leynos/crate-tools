@@ -18,6 +18,7 @@ Run with the desired semantic version:
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import tempfile
@@ -29,6 +30,11 @@ import tomlkit
 from markdown_it import MarkdownIt
 from tomlkit import items as toml_items
 from tomlkit.exceptions import TOMLKitError
+
+logger = logging.getLogger(__name__)
+
+TomlMapping = cabc.Mapping[str, typ.Any]
+TomlMutableMapping = cabc.MutableMapping[str, typ.Any]
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import for typing only
     from markdown_it.token import Token
@@ -147,7 +153,7 @@ def replace_fences(
 
 
 def _update_package_version(
-    doc: cabc.MutableMapping[str, typ.Any],
+    doc: TomlMutableMapping,
     version: str,
 ) -> None:
     """Update package version in ``doc`` if present.
@@ -172,7 +178,7 @@ def _update_package_version(
 
 
 def _extract_version_prefix(
-    entry: toml_items.String | cabc.Mapping[str, typ.Any] | str | None,
+    entry: toml_items.String | TomlMapping | str | None,
 ) -> str:
     """Return version prefix (``^`` or ``~``) if present.
 
@@ -187,14 +193,14 @@ def _extract_version_prefix(
 
     """
     if isinstance(entry, cabc.Mapping):
-        mapping = typ.cast("cabc.Mapping[str, typ.Any]", entry)
+        mapping = typ.cast("TomlMapping", entry)
         entry = mapping.get("version")
     text = entry.value if isinstance(entry, toml_items.String) else str(entry or "")
     return text[0] if text and text[0] in "^~" else ""
 
 
 def _update_dict_dependency(
-    entry: cabc.MutableMapping[str, typ.Any],
+    entry: TomlMutableMapping,
     version: str,
 ) -> None:
     """Update dict-style dependency ``entry`` with ``version``.
@@ -224,7 +230,7 @@ def _update_dict_dependency(
 
 
 def _update_string_dependency(
-    deps: cabc.MutableMapping[str, typ.Any],
+    deps: TomlMutableMapping,
     dependency: str,
     entry: toml_items.String | str,
     version: str,
@@ -252,7 +258,7 @@ def _update_string_dependency(
 
 
 def _update_dependency_in_table(
-    deps: cabc.MutableMapping[str, typ.Any],
+    deps: TomlMutableMapping,
     dependency: str,
     version: str,
 ) -> None:
@@ -276,7 +282,7 @@ def _update_dependency_in_table(
 
 
 def _update_dependency_version(
-    doc: cabc.MutableMapping[str, typ.Any],
+    doc: TomlMutableMapping,
     dependency: str,
     version: str,
 ) -> None:
@@ -318,7 +324,7 @@ def _set_version(
     toml_path: Path,
     version: str,
     dependency: str | None = None,
-    doc: cabc.MutableMapping[str, typ.Any] | None = None,
+    doc: TomlMutableMapping | None = None,
 ) -> None:
     """Set package and optional dependency version in a ``Cargo.toml``.
 
@@ -596,13 +602,15 @@ def _update_markdown_versions(md_path: Path, version: str) -> None:
 
 
 def _warn_on_markdown_update_failure(md_path: Path, version: str) -> None:
-    """Emit a warning if a markdown update fails."""
+    """Emit a warning if updating Markdown snippets raises an expected error."""
     try:
         _update_markdown_versions(md_path, version)
-    except (TOMLKitError, OSError, TypeError, ValueError) as exc:
-        print(
-            f"Warning: Failed to update {md_path}: {exc}",
-            file=sys.stderr,
+    except (TOMLKitError, OSError) as exc:
+        logger.warning(
+            "Failed to update Markdown fence versions in %s to %s: %s",
+            md_path,
+            version,
+            exc,
         )
 
 
