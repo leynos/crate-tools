@@ -1,3 +1,6 @@
+"""Tests for the version bumping helpers."""
+
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -15,7 +18,7 @@ from scripts.bump_version import replace_fences, replace_version_in_toml
     ["dependencies", "dev-dependencies", "build-dependencies"],
 )
 @pytest.mark.parametrize(
-    "body, expected, extra",
+    ("body", "expected", "extra"),
     [
         ('foo = "^0.1"', 'foo = "^1.2.3"', None),
         (
@@ -28,6 +31,7 @@ from scripts.bump_version import replace_fences, replace_version_in_toml
 def test_updates_dependency_version(
     section: str, body: str, expected: str, extra: str | None
 ) -> None:
+    """Bump targeted dependencies across dependency tables."""
     doc = tomlkit.parse(f"[{section}]\n{body}")
     _update_dependency_version(doc, "foo", "1.2.3")
     dumped = tomlkit.dumps(doc)
@@ -37,6 +41,7 @@ def test_updates_dependency_version(
 
 
 def test_preserves_trailing_comment_on_string_dependency() -> None:
+    """Ensure string dependencies keep trailing comments."""
     doc = tomlkit.parse('[dependencies]\nfoo = "^0.1"  # pinned for CI\n')
     _update_dependency_version(doc, "foo", "1.2.3")
     dumped = tomlkit.dumps(doc)
@@ -44,6 +49,7 @@ def test_preserves_trailing_comment_on_string_dependency() -> None:
 
 
 def test_preserves_quote_style_on_string_dependency() -> None:
+    """Maintain the original quoting style of string dependencies."""
     doc = tomlkit.parse("[dependencies]\nfoo = '0.1'  # single quoted\n")
     _update_dependency_version(doc, "foo", "1.2.3")
     dumped = tomlkit.dumps(doc)
@@ -53,6 +59,7 @@ def test_preserves_quote_style_on_string_dependency() -> None:
 
 
 def test_missing_dependency_no_change() -> None:
+    """Leave documents untouched when the dependency is absent."""
     snippet = '[dependencies]\nbar = "0.1"'
     doc = tomlkit.parse(snippet)
     _update_dependency_version(doc, "foo", "1.2.3")
@@ -62,6 +69,7 @@ def test_missing_dependency_no_change() -> None:
 
 
 def test_workspace_dependency_no_version_written() -> None:
+    """Skip adding explicit versions for workspace-managed dependencies."""
     doc = tomlkit.parse("[dependencies]\nfoo = { workspace = true }\n")
     _update_dependency_version(doc, "foo", "1.2.3")
     deps = doc["dependencies"]["foo"]
@@ -69,9 +77,9 @@ def test_workspace_dependency_no_version_written() -> None:
 
 
 @pytest.mark.parametrize(
-    "md_text, should_change, description",
+    ("md_text", "outcome", "description"),
     [
-        (
+        pytest.param(
             """pre
 ```toml
 [dependencies]
@@ -79,24 +87,32 @@ ortho_config = \"0\"
 ```
 post
 """,
-            True,
+            "update",
             "must update TOML fences",
+            id="toml-fence",
         ),
-        (
+        pytest.param(
             """pre
 ```bash
 echo hi
 ```
 post
 """,
-            False,
+            "preserve",
             "must leave non-TOML fences unchanged",
+            id="non-toml-fence",
         ),
     ],
 )
 def test_update_markdown_versions_behavior(
-    tmp_path: Path, md_text: str, should_change: bool, description: str
+    tmp_path: Path,
+    md_text: str,
+    outcome: typ.Literal["update", "preserve"],
+    description: str,
 ) -> None:
+    """Update Markdown fences only when the language matches TOML."""
+    should_change = outcome == "update"
+
     for rel in ("README.md", "docs/users-guide.md"):
         md_path = tmp_path / rel
         md_path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,12 +124,13 @@ def test_update_markdown_versions_behavior(
         else:
             assert updated == md_text, description
 
-
 def test_update_markdown_preserves_trailing_newline(tmp_path: Path) -> None:
+    """Keep trailing newlines when rewriting Markdown fences."""
     md_text = """```toml
 [dependencies]
 ortho_config = { version = \"0.5.0-beta1\", features = [\"json5\", \"yaml\"] }
-# Enabling these features expands file formats; precedence stays: defaults < file < env < CLI.
+# Enabling these features expands file formats; precedence stays:
+# defaults < file < env < CLI.
 ```
 """
     md_path = tmp_path / "README.md"
@@ -126,15 +143,16 @@ ortho_config = { version = \"0.5.0-beta1\", features = [\"json5\", \"yaml\"] }
     assert 'version = "0.5.0"' in "\n".join(updated_lines), (
         "must bump version inside TOML fence"
     )
-    assert updated_lines[-2] == (
-        "# Enabling these features expands file formats; precedence stays: "
-        "defaults < file < env < CLI."
+    assert (
+        updated_lines[-3]
+        == "# Enabling these features expands file formats; precedence stays:"
     )
+    assert updated_lines[-2] == "# defaults < file < env < CLI."
     assert updated_lines[-1] == "```"
 
 
 @pytest.mark.parametrize(
-    "snippet, expected_suffix",
+    ("snippet", "expected_suffix"),
     [
         ('[dependencies]\northo_config = "0"\n', "\n"),
         ('[dependencies]\northo_config = "0"\r\n', "\r\n"),
@@ -146,6 +164,7 @@ ortho_config = { version = \"0.5.0-beta1\", features = [\"json5\", \"yaml\"] }
 def test_replace_version_in_toml_preserves_suffix(
     snippet: str, expected_suffix: str
 ) -> None:
+    """Keep original newline suffixes when updating versions."""
     updated = replace_version_in_toml(snippet, "1")
     base = updated.rstrip("\r\n")
     actual_suffix = updated[len(base) :]
@@ -164,10 +183,12 @@ def test_replace_version_in_toml_preserves_suffix(
     ],
 )
 def test_replace_version_in_toml_no_dependency_returns_input(snippet: str) -> None:
+    """Return the original snippet when the dependency is absent."""
     assert replace_version_in_toml(snippet, "1") == snippet
 
 
 def test_replace_fences_preserves_indentation() -> None:
+    """Preserve indentation for nested TOML fences."""
     md_text = """1. item
 
     ```toml

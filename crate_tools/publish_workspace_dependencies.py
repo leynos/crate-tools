@@ -22,7 +22,6 @@ def _compute_valid_targets(
     crates: tuple[str, ...] | None,
 ) -> tuple[tuple[str, ...], set[str]]:
     """Determine which crates should receive replacement updates."""
-
     if crates is None:
         return tuple(REPLACEMENTS), set()
 

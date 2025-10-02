@@ -18,19 +18,22 @@ Run with the desired semantic version:
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 import tempfile
-from collections.abc import Callable, Mapping, MutableMapping
+import typing as typ
+from collections import abc as cabc
 from pathlib import Path
 
 import tomlkit
 from markdown_it import MarkdownIt
 from tomlkit.exceptions import TOMLKitError
 
+if typ.TYPE_CHECKING:  # pragma: no cover - import for typing only
+    from markdown_it.token import Token
 
-def _is_matching_fence_token(tok, lang: str) -> bool:
+
+def _is_matching_fence_token(tok: Token, lang: str) -> bool:
     """Return ``True`` if ``tok`` is a fence of ``lang``.
 
     Examples
@@ -63,12 +66,12 @@ def _extract_fence_indent(opening_line: str, fence_marker: str) -> str:
 
 
 def _process_fence_token(
-    tok,
+    tok: Token,
     lines: list[str],
     lang: str,
-    replace_fn: Callable[[str], str],
+    replace_fn: cabc.Callable[[str], str],
 ) -> str:
-    """Return rewritten fence text for ``tok``.
+    r"""Return rewritten fence text for ``tok``.
 
     Examples
     --------
@@ -97,8 +100,10 @@ def _process_fence_token(
     return f"{indent}{fence_marker}{info}\n{indented}{indent}{fence_marker}\n"
 
 
-def replace_fences(md_text: str, lang: str, replace_fn: Callable[[str], str]) -> str:
-    """Apply ``replace_fn`` to fenced code blocks of ``lang`` in Markdown text.
+def replace_fences(
+    md_text: str, lang: str, replace_fn: cabc.Callable[[str], str]
+) -> str:
+    r"""Apply ``replace_fn`` to fenced code blocks of ``lang`` in Markdown text.
 
     Parameters
     ----------
@@ -138,7 +143,7 @@ def replace_fences(md_text: str, lang: str, replace_fn: Callable[[str], str]) ->
 
 
 def _update_package_version(
-    doc: MutableMapping[str, object],
+    doc: cabc.MutableMapping[str, object],
     version: str,
 ) -> None:
     """Update package version in ``doc`` if present.
@@ -158,7 +163,7 @@ def _update_package_version(
 
 
 def _extract_version_prefix(
-    entry: tomlkit.items.String | Mapping[str, object] | str | None,
+    entry: tomlkit.items.String | cabc.Mapping[str, object] | str | None,
 ) -> str:
     """Return version prefix (``^`` or ``~``) if present.
 
@@ -172,14 +177,14 @@ def _extract_version_prefix(
     ''
 
     """
-    if isinstance(entry, Mapping):
+    if isinstance(entry, cabc.Mapping):
         entry = entry.get("version")
     text = entry.value if isinstance(entry, tomlkit.items.String) else str(entry or "")
     return text[0] if text and text[0] in "^~" else ""
 
 
 def _update_dict_dependency(
-    entry: MutableMapping[str, object],
+    entry: cabc.MutableMapping[str, object],
     version: str,
 ) -> None:
     """Update dict-style dependency ``entry`` with ``version``.
@@ -208,7 +213,7 @@ def _update_dict_dependency(
 
 
 def _update_string_dependency(
-    deps: MutableMapping[str, object],
+    deps: cabc.MutableMapping[str, object],
     dependency: str,
     entry: tomlkit.items.String | str,
     version: str,
@@ -235,7 +240,7 @@ def _update_string_dependency(
 
 
 def _update_dependency_in_table(
-    deps: MutableMapping[str, object],
+    deps: cabc.MutableMapping[str, object],
     dependency: str,
     version: str,
 ) -> None:
@@ -252,14 +257,14 @@ def _update_dependency_in_table(
 
     """
     entry = deps[dependency]
-    if isinstance(entry, Mapping):
+    if isinstance(entry, cabc.Mapping):
         _update_dict_dependency(entry, version)
     else:
         _update_string_dependency(deps, dependency, entry, version)
 
 
 def _update_dependency_version(
-    doc: MutableMapping[str, object],
+    doc: cabc.MutableMapping[str, object],
     dependency: str,
     version: str,
 ) -> None:
@@ -301,7 +306,7 @@ def _set_version(
     toml_path: Path,
     version: str,
     dependency: str | None = None,
-    doc: MutableMapping[str, object] | None = None,
+    doc: cabc.MutableMapping[str, object] | None = None,
 ) -> None:
     """Set package and optional dependency version in a ``Cargo.toml``.
 
@@ -333,7 +338,7 @@ def _set_version(
     ) as tf:
         tf.write(text)
         temp_name = tf.name
-    os.replace(temp_name, toml_path)
+    Path(temp_name).replace(toml_path)
 
 
 def _validate_args_and_setup(argv: list[str]) -> tuple[str, Path] | None:
@@ -402,7 +407,7 @@ def _resolve_member_paths(root: Path, members: list[str]) -> list[Path]:
 
 
 def _update_member_version(member_path: Path, version: str) -> bool:
-    """Update a member Cargo.toml with the supplied version.
+    r"""Update a member Cargo.toml with the supplied version.
 
     Parameters
     ----------
@@ -515,7 +520,7 @@ def _process_members(root: Path, members: list[str], version: str) -> bool:
 
 
 def replace_version_in_toml(snippet: str, version: str) -> str:
-    """Update ``ortho_config`` version in a TOML snippet.
+    r"""Update ``ortho_config`` version in a TOML snippet.
 
     Examples
     --------
@@ -578,6 +583,17 @@ def _update_markdown_versions(md_path: Path, version: str) -> None:
     md_path.write_text(updated, encoding="utf-8")
 
 
+def _warn_on_markdown_update_failure(md_path: Path, version: str) -> None:
+    """Emit a warning if a markdown update fails."""
+    try:
+        _update_markdown_versions(md_path, version)
+    except (TOMLKitError, OSError, TypeError, ValueError) as exc:
+        print(
+            f"Warning: Failed to update {md_path}: {exc}",
+            file=sys.stderr,
+        )
+
+
 def main(argv: list[str]) -> int:
     """Update the workspace and member crate versions to the supplied value.
 
@@ -626,13 +642,7 @@ def main(argv: list[str]) -> int:
         return 1
     had_error = _process_members(root, members, version)
     for md_path in (root / "README.md", root / "docs" / "users-guide.md"):
-        try:
-            _update_markdown_versions(md_path, version)
-        except (TOMLKitError, OSError, TypeError, ValueError) as exc:
-            print(
-                f"Warning: Failed to update {md_path}: {exc}",
-                file=sys.stderr,
-            )
+        _warn_on_markdown_update_failure(md_path, version)
     return 0 if not had_error else 1
 
 

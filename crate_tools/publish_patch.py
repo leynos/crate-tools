@@ -212,7 +212,7 @@ def extract_existing_items(value: object) -> tuple[tuple[str, object], ...]:
     {'default-features': False}
 
     """
-    if isinstance(value, (Table, InlineTable)):
+    if isinstance(value, Table | InlineTable):
         return tuple(
             (key, item)
             for key, item in value.items()
