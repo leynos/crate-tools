@@ -166,15 +166,11 @@ def _update_package_version(
     '1'
 
     """
-    workspace = doc.get("workspace")
-    if isinstance(workspace, cabc.MutableMapping):
-        package = workspace.get("package")
-        if isinstance(package, cabc.MutableMapping):
+    match doc:
+        case {"workspace": {"package": cabc.MutableMapping() as package}}:
             package["version"] = version
-            return
-    package = doc.get("package")
-    if isinstance(package, cabc.MutableMapping):
-        package["version"] = version
+        case {"package": cabc.MutableMapping() as package}:
+            package["version"] = version
 
 
 def _extract_version_prefix(
