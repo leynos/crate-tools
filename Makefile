@@ -2,6 +2,7 @@ MDLINT ?= $(shell which markdownlint)
 NIXIE ?= $(shell which nixie)
 MDFORMAT_ALL ?= $(shell which mdformat-all)
 TOOLS = $(MDFORMAT_ALL) ruff ty $(MDLINT) $(NIXIE) uv
+CRATE_TOOLS_SCRIPTS := $(sort $(wildcard crate_tools/*.py))
 VENV_TOOLS = pytest
 
 .PHONY: help all clean build build-release lint fmt check-fmt \
@@ -65,7 +66,7 @@ lint: ruff ## Run linters
 	ruff check
 
 typecheck: build ty ## Run typechecking
-	ty check --python-version 3.12 --extra-search-path crate_tools crate_tools/*.py
+	ty check --python-version 3.13 --extra-search-path crate_tools $(CRATE_TOOLS_SCRIPTS)
 
 markdownlint: $(MDLINT) ## Lint Markdown files
 	find . -type f -name '*.md' \
