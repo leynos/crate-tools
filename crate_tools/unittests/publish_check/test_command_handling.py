@@ -24,7 +24,7 @@ if typ.TYPE_CHECKING:
         CommandFailureTestCase(
             crate="demo",
             result_kwargs={
-                "command": ["cargo", "check"],
+                "command": ("cargo", "check"),
                 "return_code": 7,
                 "stdout": "stdout text",
                 "stderr": "stderr text",
@@ -36,7 +36,7 @@ if typ.TYPE_CHECKING:
         CommandFailureTestCase(
             crate="fmt",
             result_kwargs={
-                "command": ["cargo", "fmt"],
+                "command": ("cargo", "fmt"),
                 "return_code": 1,
                 "stdout": "",
                 "stderr": "",
@@ -48,7 +48,7 @@ if typ.TYPE_CHECKING:
         CommandFailureTestCase(
             crate="fmt",
             result_kwargs={
-                "command": ["cargo", "fmt"],
+                "command": ("cargo", "fmt"),
                 "return_code": 5,
                 "stdout": b"binary stdout",
                 "stderr": b"binary stderr",
@@ -60,7 +60,7 @@ if typ.TYPE_CHECKING:
         CommandFailureTestCase(
             crate="fmt",
             result_kwargs={
-                "command": ["cargo", "fmt"],
+                "command": ("cargo", "fmt"),
                 "return_code": -9,
                 "stdout": "ignored",
                 "stderr": "ignored",
@@ -118,7 +118,7 @@ def test_run_cargo_command_streams_output(
     )
     run_publish_check_module.run_cargo_command(
         context,
-        ["cargo", "mock"],
+        ("cargo", "mock"),
     )
 
     captured = capsys.readouterr()
@@ -147,7 +147,7 @@ def test_run_cargo_command_uses_env_timeout(
     )
     run_publish_check_module.run_cargo_command(
         context,
-        ["cargo", "mock"],
+        ("cargo", "mock"),
     )
 
     assert fake_local.cwd_calls == [crate_dir]
@@ -174,7 +174,7 @@ def test_run_cargo_command_logs_failures(
         with pytest.raises(SystemExit) as excinfo:
             module.run_cargo_command(
                 context,
-                ["cargo", "failing"],
+                ("cargo", "failing"),
             )
     assert "exit code 3" in str(excinfo.value)
     assert "bad stdout" in cargo_test_context.caplog.text
@@ -215,12 +215,12 @@ def test_run_cargo_command_suppresses_failure_when_handler_accepts(
     )
     run_publish_check_module.run_cargo_command(
         context,
-        ["cargo", "oops"],
+        ("cargo", "oops"),
         on_failure=record_failure,
     )
 
     expected = run_publish_check_module.CommandResult(
-        command=["cargo", "oops"],
+        command=("cargo", "oops"),
         return_code=5,
         stdout="out",
         stderr="err",
@@ -268,12 +268,12 @@ def test_run_cargo_command_calls_default_when_handler_declines(
     with pytest.raises(SystemExit, match="default handler invoked"):
         run_publish_check_module.run_cargo_command(
             context,
-            ["cargo", "oops"],
+            ("cargo", "oops"),
             on_failure=decline_failure,
         )
 
     expected = run_publish_check_module.CommandResult(
-        command=["cargo", "oops"],
+        command=("cargo", "oops"),
         return_code=17,
         stdout="out",
         stderr="err",
@@ -303,7 +303,7 @@ def test_run_cargo_command_times_out(
     with pytest.raises(SystemExit) as excinfo:
         run_publish_check_module.run_cargo_command(
             context,
-            ["cargo", "wait"],
+            ("cargo", "wait"),
         )
     assert "timed out" in str(excinfo.value)
 
@@ -334,7 +334,7 @@ def test_publish_one_command_handles_already_published(
         on_failure: typ.Callable[[str, run_publish_check_module.CommandResult], bool],
     ) -> None:
         result = run_publish_check_module.CommandResult(
-            command=command,
+            command=tuple(command),
             return_code=1,
             stdout="dry run output",
             stderr="error: crate already exists on crates.io index",
@@ -350,7 +350,7 @@ def test_publish_one_command_handles_already_published(
         handled = run_publish_check_module._publish_one_command(
             "demo",
             workspace,
-            ["cargo", "publish"],
+            ("cargo", "publish"),
             timeout_secs=11,
         )
 
@@ -377,7 +377,7 @@ def test_publish_one_command_detects_markers_case_insensitive(
         on_failure: typ.Callable[[str, run_publish_check_module.CommandResult], bool],
     ) -> None:
         result = run_publish_check_module.CommandResult(
-            command=command,
+            command=tuple(command),
             return_code=1,
             stdout="WARNING: crate VERSION ALREADY EXISTS",  # intentionally upper case
             stderr="",
@@ -393,7 +393,7 @@ def test_publish_one_command_detects_markers_case_insensitive(
     handled = run_publish_check_module._publish_one_command(
         "demo",
         workspace,
-        ["cargo", "publish"],
+        ("cargo", "publish"),
     )
 
     assert handled is True
@@ -427,7 +427,7 @@ def test_contains_already_published_marker_handles_known_messages(
 ) -> None:
     """Confirm recognised crates.io markers trigger the already-published path."""
     result = run_publish_check_module.CommandResult(
-        command=["cargo", "publish"],
+        command=("cargo", "publish"),
         return_code=101,
         stdout=stdout,
         stderr=stderr,
@@ -462,7 +462,7 @@ def test_publish_one_command_returns_false_on_success(
     handled = run_publish_check_module._publish_one_command(
         "demo",
         workspace,
-        ["cargo", "publish"],
+        ("cargo", "publish"),
         timeout_secs=7,
     )
 
@@ -491,7 +491,7 @@ def test_publish_one_command_propagates_unhandled_errors(
         on_failure: typ.Callable[[str, run_publish_check_module.CommandResult], bool],
     ) -> None:
         result = run_publish_check_module.CommandResult(
-            command=command,
+            command=tuple(command),
             return_code=2,
             stdout="",  # stdout intentionally empty
             stderr="error: publishing failed",
@@ -508,7 +508,7 @@ def test_publish_one_command_propagates_unhandled_errors(
         run_publish_check_module._publish_one_command(
             "demo",
             workspace,
-            ["cargo", "publish"],
+            ("cargo", "publish"),
         )
 
 
@@ -516,11 +516,11 @@ def test_publish_one_command_propagates_unhandled_errors(
     ("function_and_command", "test_scenario"),
     [
         (
-            ("package_crate", ["cargo", "package", "--allow-dirty", "--no-verify"]),
+            ("package_crate", ("cargo", "package", "--allow-dirty", "--no-verify")),
             ("demo", 42),
         ),
         (
-            ("check_crate", ["cargo", "check", "--all-features"]),
+            ("check_crate", ("cargo", "check", "--all-features")),
             ("demo", 17),
         ),
     ],
@@ -529,9 +529,9 @@ def test_publish_one_command_propagates_unhandled_errors(
 def test_cargo_commands_invoke_runner(
     run_publish_check_module: ModuleType,
     mock_cargo_runner: list[
-        tuple[object, list[str], typ.Callable[[str, object], bool] | None]
+        tuple[object, tuple[str, ...], typ.Callable[[str, object], bool] | None]
     ],
-    function_and_command: tuple[str, list[str]],
+    function_and_command: tuple[str, tuple[str, ...]],
     test_scenario: tuple[str, int],
 ) -> None:
     """Ensure cargo helper wrappers delegate to ``run_cargo_command``."""

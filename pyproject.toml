@@ -101,6 +101,9 @@ timeout = 30
 [tool.uv]
 package = true
 
+[tool.setuptools.packages.find]
+include = ["crate_tools", "crate_tools.*", "scripts", "scripts.*"]
+
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

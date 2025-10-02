@@ -7,12 +7,28 @@ references in a single place.
 
 from __future__ import annotations
 
-import typing as typ
+import logging
 from pathlib import Path
 
 from publish_patch import REPLACEMENTS, apply_replacements
 
 __all__ = ["apply_workspace_replacements"]
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _compute_valid_targets(
+    crates: tuple[str, ...] | None,
+) -> tuple[tuple[str, ...], set[str]]:
+    """Determine which crates should receive replacement updates."""
+
+    if crates is None:
+        return tuple(REPLACEMENTS), set()
+
+    unknown = {crate for crate in crates if crate not in REPLACEMENTS}
+    valid = tuple(crate for crate in crates if crate in REPLACEMENTS)
+    return valid, unknown
 
 
 def apply_workspace_replacements(
@@ -24,6 +40,9 @@ def apply_workspace_replacements(
 ) -> None:
     """Rewrite workspace dependency declarations for publish workflows.
 
+    Crates lacking replacement configuration are reported via a warning and left
+    unchanged so publish runs can continue updating the remaining manifests.
+
     Parameters
     ----------
     workspace_root : Path
@@ -34,34 +53,26 @@ def apply_workspace_replacements(
         Toggle whether rewritten dependencies retain their relative path entries.
     crates : tuple[str, ...] | None, optional
         Subset of crates to update; default rewrites every crate with
-        replacements.
+        replacements. Crates without replacement configuration are skipped and
+        left untouched so callers can safely request broader sets.
 
     Returns
     -------
     None
         All matching manifests are rewritten in place.
 
-    Raises
-    ------
-    SystemExit
-        Raised when any supplied crate lacks a replacement configuration or a
-        manifest cannot be rewritten due to a missing replacement entry.
-
     Examples
     --------
     >>> from pathlib import Path
     >>> apply_workspace_replacements(Path("."), "1.2.3", include_local_path=False)
+
     """
     workspace_root = Path(workspace_root)
-    if crates is None:
-        targets: typ.Final[tuple[str, ...]] = tuple(REPLACEMENTS)
-    else:
-        unknown = tuple(crate for crate in crates if crate not in REPLACEMENTS)
-        if unknown:
-            formatted = ", ".join(repr(crate) for crate in unknown)
-            message = "unknown crates: " + formatted
-            raise SystemExit(message)
-        targets = crates
+    unknown: set[str] = set()
+    targets, unknown = _compute_valid_targets(crates)
+    if unknown:
+        formatted = ", ".join(sorted(unknown))
+        LOGGER.warning("Skipping crates without replacement entries: %s", formatted)
     for crate in targets:
         manifest = workspace_root / "crates" / crate / "Cargo.toml"
         apply_replacements(

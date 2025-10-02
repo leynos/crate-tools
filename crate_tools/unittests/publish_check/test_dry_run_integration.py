@@ -152,6 +152,7 @@ class TestRunPublishCheckOrchestration:
         tuple
             The prepared workspace directory and the lists capturing recorded
             workspace steps, package invocations, and check invocations.
+
         """
         workspace_dir = self._create_test_workspace(
             monkeypatch, tmp_path, run_publish_check_module
@@ -174,6 +175,7 @@ class TestRunPublishCheckOrchestration:
         ----------
         run_publish_check_module:
             Module under test providing the ``run_publish_check`` entrypoint.
+
         """
         run_publish_check_module.run_publish_check(keep_tmp=False, timeout_secs=15)
 
@@ -196,6 +198,7 @@ class TestRunPublishCheckOrchestration:
             Captured invocations to ``package_crate``.
         check_calls:
             Captured invocations to ``check_crate``.
+
         """
         manifest_path = workspace_dir / "Cargo.toml"
         assert steps[:3] == [

@@ -7,6 +7,7 @@ manifest structure.
 
 from __future__ import annotations
 
+import functools
 import typing as typ
 from pathlib import Path
 
@@ -114,7 +115,24 @@ def _should_write_manifest(*, changed: bool, document: TOMLDocument) -> bool:
     return changed and document.get("workspace") is not None
 
 
+def _members_is_multiline(members: Array) -> bool:
+    """Return the multiline flag recorded on ``members`` arrays."""
+    return bool(getattr(members, "_multiline", False))
+
+
 def _format_multiline_members_if_needed(members: Array) -> None:
-    """Ensure ``members`` is rendered as multiline when it spans lines."""
-    if "\n" in members.as_string():
-        members.multiline(multiline=True)
+    """Ensure ``members`` renders multiline and expose the state for callers.
+
+    The function toggles TOMLKit's multiline rendering when the serialised array
+    spans multiple lines and attaches an ``is_multiline`` helper so downstream
+    logic can observe the state. The helper reads the private ``_multiline``
+    attribute that TOMLKit maintains.
+    """
+    should_multiline = "\n" in members.as_string()
+    members.multiline(multiline=should_multiline)
+
+    # ``is_multiline`` is dynamically attached for compatibility with existing
+    # consumers that query TOMLKit arrays for this helper.
+    members.is_multiline = functools.partial(  # type: ignore[attr-defined]
+        _members_is_multiline, members
+    )
