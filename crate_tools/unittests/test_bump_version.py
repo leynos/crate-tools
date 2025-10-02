@@ -78,7 +78,7 @@ def test_workspace_dependency_no_version_written() -> None:
 
 
 @pytest.mark.parametrize(
-    ("md_text", "expected_text", "description"),
+    ("md_text", "expected_text"),
     [
         pytest.param(
             """pre
@@ -95,7 +95,6 @@ ortho_config = \"1\"
 ```
 post
 """,
-            "must update TOML fences",
             id="toml-fence",
         ),
         pytest.param(
@@ -111,7 +110,6 @@ echo hi
 ```
 post
 """,
-            "must leave non-TOML fences unchanged",
             id="non-toml-fence",
         ),
     ],
@@ -120,7 +118,6 @@ def test_update_markdown_versions_behavior(
     tmp_path: Path,
     md_text: str,
     expected_text: str,
-    description: str,
 ) -> None:
     """Update Markdown fences only when the language matches TOML."""
     for rel in ("README.md", "docs/users-guide.md"):
@@ -129,7 +126,7 @@ def test_update_markdown_versions_behavior(
         md_path.write_text(md_text)
         _update_markdown_versions(md_path, "1")
         updated = md_path.read_text()
-        assert updated == expected_text, description
+        assert updated == expected_text
 
 
 def test_warn_on_markdown_update_failure_logs_warning(
