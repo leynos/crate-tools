@@ -13,12 +13,12 @@ Examples
 --------
 Run the complete publish-check workflow::
 
-    python scripts/run_publish_check.py
+    python -m crate_tools.run_publish_check
 
 Run with custom timeout and workspace preservation::
 
     PUBLISH_CHECK_TIMEOUT_SECS=1200 PUBLISH_CHECK_KEEP_TMP=1 \
-        python scripts/run_publish_check.py
+        python -m crate_tools.run_publish_check
 
 """
 
@@ -42,6 +42,7 @@ import tempfile
 import typing as typ
 from contextlib import ExitStack
 from pathlib import Path
+from types import MappingProxyType
 
 import cyclopts
 from cyclopts import App, Parameter
@@ -59,7 +60,7 @@ from publish_workspace import (
 
 LOGGER = logging.getLogger(__name__)
 
-Command = typ.Sequence[str]
+Command = tuple[str, ...]
 
 
 class CrateAction(typ.Protocol):
@@ -70,16 +71,17 @@ class CrateAction(typ.Protocol):
         ...
 
 
-CRATE_ORDER: typ.Final[tuple[str, ...]] = PUBLISHABLE_CRATES
+CRATE_ORDER: typ.Final[tuple[str, ...]] = tuple(PUBLISHABLE_CRATES)
 
 LIVE_PUBLISH_COMMANDS_SEQUENCE: typ.Final[tuple[Command, ...]] = (
     ("cargo", "publish", "--dry-run"),
     ("cargo", "publish"),
 )
 
-LIVE_PUBLISH_COMMANDS: typ.Final[dict[str, tuple[Command, ...]]] = {
-    crate: LIVE_PUBLISH_COMMANDS_SEQUENCE for crate in PUBLISHABLE_CRATES
-}
+LIVE_PUBLISH_COMMANDS: typ.Final[typ.Mapping[str, tuple[Command, ...]]]
+LIVE_PUBLISH_COMMANDS = MappingProxyType(
+    dict.fromkeys(PUBLISHABLE_CRATES, LIVE_PUBLISH_COMMANDS_SEQUENCE)
+)
 
 ALREADY_PUBLISHED_MARKERS: typ.Final[tuple[str, ...]] = (
     "already exists on crates.io index",
@@ -112,18 +114,23 @@ def _resolve_timeout(timeout_secs: int | None) -> int:
         return DEFAULT_PUBLISH_TIMEOUT_SECS
 
     try:
-        return int(env_value)
+        value = int(env_value)
     except ValueError as err:
         LOGGER.exception("PUBLISH_CHECK_TIMEOUT_SECS must be an integer")
         message = "PUBLISH_CHECK_TIMEOUT_SECS must be an integer"
         raise SystemExit(message) from err
+    if value <= 0:
+        message = "PUBLISH_CHECK_TIMEOUT_SECS must be a positive integer"
+        LOGGER.exception("%s", message)
+        raise SystemExit(message)
+    return value
 
 
 @dc.dataclass(frozen=True)
 class CommandResult:
     """Result of a cargo command execution."""
 
-    command: list[str]
+    command: tuple[str, ...]
     return_code: int
     stdout: str
     stderr: str
@@ -207,7 +214,7 @@ def _execute_cargo_command_with_timeout(
         raise SystemExit(message) from error
 
     return CommandResult(
-        command=list(command),
+        command=tuple(command),
         return_code=return_code,
         stdout=stdout,
         stderr=stderr,
@@ -268,7 +275,7 @@ def _handle_command_output(stdout: str, stderr: str) -> None:
 
 def run_cargo_command(
     context: CargoCommandContext,
-    command: typ.Sequence[str],
+    command: Command,
     *,
     on_failure: FailureHandler | None = None,
 ) -> None:
@@ -292,7 +299,7 @@ def run_cargo_command(
     Running ``cargo --version`` for a crate directory:
 
     >>> context = build_cargo_command_context("tools", Path("/tmp/workspace"))
-    >>> run_cargo_command(context, ["cargo", "--version"])
+    >>> run_cargo_command(context, ("cargo", "--version"))
     cargo 1.76.0 (9c9d2b9f8 2024-02-16)  # Version output will vary.
 
     The command honours the ``timeout_secs`` parameter when provided. When it
@@ -322,7 +329,7 @@ def _run_cargo_subcommand(
     subcommand: str,
     args: typ.Sequence[str],
 ) -> None:
-    command = ["cargo", subcommand, *list(args)]
+    command: Command = ("cargo", subcommand, *tuple(args))
     run_cargo_command(
         build_cargo_command_context(
             context.crate,
@@ -395,7 +402,7 @@ def _contains_already_published_marker(result: CommandResult) -> bool:
 def _publish_one_command(
     crate: str,
     workspace_root: Path,
-    command: typ.Sequence[str],
+    command: Command,
     timeout_secs: int | None = None,
 ) -> bool:
     """Run a publish command, returning ``True`` when publishing should stop.

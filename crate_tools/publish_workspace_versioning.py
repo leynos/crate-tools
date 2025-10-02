@@ -70,9 +70,15 @@ def _extract_section_lines(lines: list[str], workspace_index: int) -> list[str]:
         return lines[start:end]
 
     excerpt: list[str] = [lines[header_index]]
-    for cursor in range(header_index + 1, workspace_index):
-        if not lines[cursor].strip():
-            excerpt.append(lines[cursor])
+    # Include only blank lines between the previous header and the workspace
+    # section so diagnostics have immediate context without unrelated entries
+    # from earlier manifest sections.
+    blank_lines = [
+        lines[cursor]
+        for cursor in range(header_index + 1, workspace_index)
+        if not lines[cursor].strip()
+    ]
+    excerpt.extend(blank_lines)
     excerpt.extend(lines[workspace_index:end])
     return excerpt
 
