@@ -1,16 +1,12 @@
 """Compatibility wrapper for :mod:`crate_tools.bump_version`."""
 
 from crate_tools.bump_version import (
-    _update_dependency_version,
-    _update_markdown_versions,
     main,
     replace_fences,
     replace_version_in_toml,
 )
 
 __all__ = [
-    "_update_dependency_version",
-    "_update_markdown_versions",
     "main",
     "replace_fences",
     "replace_version_in_toml",

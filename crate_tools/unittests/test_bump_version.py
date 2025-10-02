@@ -3,12 +3,11 @@ from pathlib import Path
 import pytest
 import tomlkit
 
-from scripts.bump_version import (
+from crate_tools.bump_version import (
     _update_dependency_version,
     _update_markdown_versions,
-    replace_fences,
-    replace_version_in_toml,
 )
+from scripts.bump_version import replace_fences, replace_version_in_toml
 
 
 @pytest.mark.parametrize(
