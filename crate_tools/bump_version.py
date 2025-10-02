@@ -27,6 +27,7 @@ from pathlib import Path
 
 import tomlkit
 from markdown_it import MarkdownIt
+from tomlkit import items as toml_items
 from tomlkit.exceptions import TOMLKitError
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import for typing only
@@ -87,6 +88,9 @@ def _process_fence_token(
     True
 
     """
+    if tok.map is None:
+        message = "Fence token is missing positional mapping data"
+        raise ValueError(message)
     start, _ = tok.map
     fence_marker = tok.markup or "```"
     indent = _extract_fence_indent(lines[start], fence_marker)
@@ -132,7 +136,7 @@ def replace_fences(
     out: list[str] = []
     last = 0
     for tok in tokens:
-        if not _is_matching_fence_token(tok, lang):
+        if not _is_matching_fence_token(tok, lang) or tok.map is None:
             continue
         start, end = tok.map
         out.append("".join(lines[last:start]))
@@ -143,7 +147,7 @@ def replace_fences(
 
 
 def _update_package_version(
-    doc: cabc.MutableMapping[str, object],
+    doc: cabc.MutableMapping[str, typ.Any],
     version: str,
 ) -> None:
     """Update package version in ``doc`` if present.
@@ -156,14 +160,19 @@ def _update_package_version(
     '1'
 
     """
-    if "workspace" in doc and "package" in doc["workspace"]:
-        doc["workspace"]["package"]["version"] = version
-    elif "package" in doc:
-        doc["package"]["version"] = version
+    workspace = doc.get("workspace")
+    if isinstance(workspace, cabc.MutableMapping):
+        package = workspace.get("package")
+        if isinstance(package, cabc.MutableMapping):
+            package["version"] = version
+            return
+    package = doc.get("package")
+    if isinstance(package, cabc.MutableMapping):
+        package["version"] = version
 
 
 def _extract_version_prefix(
-    entry: tomlkit.items.String | cabc.Mapping[str, object] | str | None,
+    entry: toml_items.String | cabc.Mapping[str, typ.Any] | str | None,
 ) -> str:
     """Return version prefix (``^`` or ``~``) if present.
 
@@ -178,13 +187,14 @@ def _extract_version_prefix(
 
     """
     if isinstance(entry, cabc.Mapping):
-        entry = entry.get("version")
-    text = entry.value if isinstance(entry, tomlkit.items.String) else str(entry or "")
+        mapping = typ.cast("cabc.Mapping[str, typ.Any]", entry)
+        entry = mapping.get("version")
+    text = entry.value if isinstance(entry, toml_items.String) else str(entry or "")
     return text[0] if text and text[0] in "^~" else ""
 
 
 def _update_dict_dependency(
-    entry: cabc.MutableMapping[str, object],
+    entry: cabc.MutableMapping[str, typ.Any],
     version: str,
 ) -> None:
     """Update dict-style dependency ``entry`` with ``version``.
@@ -203,9 +213,10 @@ def _update_dict_dependency(
         return
     prefix = _extract_version_prefix(entry)
     existing = entry.get("version")
-    if isinstance(existing, tomlkit.items.String):
+    if isinstance(existing, toml_items.String):
         try:
-            existing.value = prefix + version
+            cast_existing = typ.cast("typ.Any", existing)
+            cast_existing.value = prefix + version
         except AttributeError:  # tomlkit <0.14 lacks a value setter
             existing._original = prefix + version
     else:
@@ -213,9 +224,9 @@ def _update_dict_dependency(
 
 
 def _update_string_dependency(
-    deps: cabc.MutableMapping[str, object],
+    deps: cabc.MutableMapping[str, typ.Any],
     dependency: str,
-    entry: tomlkit.items.String | str,
+    entry: toml_items.String | str,
     version: str,
 ) -> None:
     """Update string-style dependency ``dependency`` in ``deps``.
@@ -230,9 +241,10 @@ def _update_string_dependency(
 
     """
     prefix = _extract_version_prefix(entry)
-    if isinstance(entry, tomlkit.items.String):
+    if isinstance(entry, toml_items.String):
         try:
-            entry.value = prefix + version
+            cast_entry = typ.cast("typ.Any", entry)
+            cast_entry.value = prefix + version
         except AttributeError:  # tomlkit <0.14 lacks a value setter
             entry._original = prefix + version
     else:
@@ -240,7 +252,7 @@ def _update_string_dependency(
 
 
 def _update_dependency_in_table(
-    deps: cabc.MutableMapping[str, object],
+    deps: cabc.MutableMapping[str, typ.Any],
     dependency: str,
     version: str,
 ) -> None:
@@ -264,7 +276,7 @@ def _update_dependency_in_table(
 
 
 def _update_dependency_version(
-    doc: cabc.MutableMapping[str, object],
+    doc: cabc.MutableMapping[str, typ.Any],
     dependency: str,
     version: str,
 ) -> None:
@@ -306,7 +318,7 @@ def _set_version(
     toml_path: Path,
     version: str,
     dependency: str | None = None,
-    doc: cabc.MutableMapping[str, object] | None = None,
+    doc: cabc.MutableMapping[str, typ.Any] | None = None,
 ) -> None:
     """Set package and optional dependency version in a ``Cargo.toml``.
 

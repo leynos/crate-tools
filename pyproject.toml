@@ -24,6 +24,7 @@ dev = [
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 include = ["crate_tools"]
+exclude = ["crate_tools/unittests", "**/unittests"]
 
 [tool.ruff]
 line-length = 88

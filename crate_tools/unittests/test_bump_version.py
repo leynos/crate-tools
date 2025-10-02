@@ -124,6 +124,7 @@ def test_update_markdown_versions_behavior(
         else:
             assert updated == md_text, description
 
+
 def test_update_markdown_preserves_trailing_newline(tmp_path: Path) -> None:
     """Keep trailing newlines when rewriting Markdown fences."""
     md_text = """```toml

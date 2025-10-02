@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from publish_patch import REPLACEMENTS, apply_replacements
+from crate_tools.publish_patch import REPLACEMENTS, apply_replacements
 
 __all__ = ["apply_workspace_replacements"]
 
