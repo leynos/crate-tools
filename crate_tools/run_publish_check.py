@@ -48,15 +48,37 @@ import cyclopts
 from cyclopts import App, Parameter
 from plumbum import local
 from plumbum.commands.processes import ProcessTimedOut
-from publish_workspace import (
-    PUBLISHABLE_CRATES,
-    apply_workspace_replacements,
-    export_workspace,
-    prune_workspace_members,
-    remove_patch_entry,
-    strip_patch_section,
-    workspace_version,
-)
+
+if typ.TYPE_CHECKING:
+    from crate_tools.publish_workspace import (
+        PUBLISHABLE_CRATES,
+        apply_workspace_replacements,
+        export_workspace,
+        prune_workspace_members,
+        remove_patch_entry,
+        strip_patch_section,
+        workspace_version,
+    )
+elif __package__ in {None, ""}:
+    from publish_workspace import (
+        PUBLISHABLE_CRATES,
+        apply_workspace_replacements,
+        export_workspace,
+        prune_workspace_members,
+        remove_patch_entry,
+        strip_patch_section,
+        workspace_version,
+    )
+else:
+    from .publish_workspace import (
+        PUBLISHABLE_CRATES,
+        apply_workspace_replacements,
+        export_workspace,
+        prune_workspace_members,
+        remove_patch_entry,
+        strip_patch_section,
+        workspace_version,
+    )
 
 LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +117,8 @@ ALREADY_PUBLISHED_MARKERS_FOLDED: typ.Final[tuple[str, ...]] = tuple(
 
 DEFAULT_PUBLISH_TIMEOUT_SECS = 900
 
-app = App(config=cyclopts.config.Env("PUBLISH_CHECK_", command=False))
+app = App()
+app.config = (cyclopts.config.Env("PUBLISH_CHECK_", command=False),)
 
 
 def _resolve_timeout(timeout_secs: int | None) -> int:
@@ -441,7 +464,7 @@ def _publish_one_command(
 
 def publish_crate_commands(
     crate: str,
-    workspace_root: Path,
+    workspace: Path,
     *,
     timeout_secs: int,
 ) -> None:
@@ -452,7 +475,7 @@ def publish_crate_commands(
     crate : str
         Name of the crate being published. Must exist in
         :data:`LIVE_PUBLISH_COMMANDS`.
-    workspace_root : Path
+    workspace : Path
         Root directory containing the exported workspace.
     timeout_secs : int
         Timeout in seconds applied to each ``cargo publish`` invocation.
@@ -473,7 +496,7 @@ def publish_crate_commands(
     for command in commands:
         if _publish_one_command(
             crate,
-            workspace_root,
+            workspace,
             command,
             timeout_secs=timeout_secs,
         ):
@@ -623,11 +646,11 @@ def _process_crates_for_check(workspace: Path, timeout_secs: int) -> None:
 
     """
 
-    def _crate_action(crate: str, root: Path, *, timeout_secs: int) -> None:
+    def _crate_action(crate: str, workspace: Path, *, timeout_secs: int) -> None:
         if crate == "rstest-bdd-patterns":
-            package_crate(crate, root, timeout_secs=timeout_secs)
+            package_crate(crate, workspace, timeout_secs=timeout_secs)
         else:
-            check_crate(crate, root, timeout_secs=timeout_secs)
+            check_crate(crate, workspace, timeout_secs=timeout_secs)
 
     config = CrateProcessingConfig(
         strip_patch=True,

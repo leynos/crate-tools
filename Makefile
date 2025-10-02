@@ -65,7 +65,7 @@ lint: ruff ## Run linters
 	ruff check
 
 typecheck: build ty ## Run typechecking
-	ty check crate_tools/bump_version.py crate_tools/publish_patch.py crate_tools/publish_workspace_dependencies.py
+	ty check --python-version 3.12 --extra-search-path crate_tools crate_tools/*.py
 
 markdownlint: $(MDLINT) ## Lint Markdown files
 	find . -type f -name '*.md' \
