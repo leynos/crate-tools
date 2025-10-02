@@ -199,6 +199,31 @@ def _extract_version_prefix(
     return text[0] if text and text[0] in "^~" else ""
 
 
+def _infer_string_type(item: toml_items.String) -> toml_items.StringType:
+    """Return the tomlkit string type that matches ``item``'s quoting style."""
+    raw = item.as_string()
+    if raw.startswith('"' * 3):
+        return toml_items.StringType.MLB
+    if raw.startswith("'''"):
+        return toml_items.StringType.MLL
+    if raw.startswith("'"):
+        return toml_items.StringType.SLL
+    return toml_items.StringType.SLB
+
+
+def _clone_string_with_value(item: toml_items.String, value: str) -> toml_items.String:
+    """Produce a new tomlkit string preserving ``item``'s trivia and quoting."""
+    # ``String.from_raw`` and trivia mutation are stable in tomlkit 0.13+, so we
+    # rebuild the node instead of mutating private attributes.
+
+    replacement = toml_items.String.from_raw(value, type_=_infer_string_type(item))
+    replacement.trivia.indent = item.trivia.indent
+    replacement.trivia.comment = item.trivia.comment
+    replacement.trivia.comment_ws = item.trivia.comment_ws
+    replacement.trivia.trail = item.trivia.trail
+    return replacement
+
+
 def _update_dict_dependency(
     entry: TomlMutableMapping,
     version: str,
@@ -220,11 +245,7 @@ def _update_dict_dependency(
     prefix = _extract_version_prefix(entry)
     existing = entry.get("version")
     if isinstance(existing, toml_items.String):
-        try:
-            cast_existing = typ.cast("typ.Any", existing)
-            cast_existing.value = prefix + version
-        except AttributeError:  # tomlkit <0.14 lacks a value setter
-            existing._original = prefix + version
+        entry["version"] = _clone_string_with_value(existing, prefix + version)
     else:
         entry["version"] = prefix + version
 
@@ -248,11 +269,7 @@ def _update_string_dependency(
     """
     prefix = _extract_version_prefix(entry)
     if isinstance(entry, toml_items.String):
-        try:
-            cast_entry = typ.cast("typ.Any", entry)
-            cast_entry.value = prefix + version
-        except AttributeError:  # tomlkit <0.14 lacks a value setter
-            entry._original = prefix + version
+        deps[dependency] = _clone_string_with_value(entry, prefix + version)
     else:
         deps[dependency] = prefix + version
 
@@ -602,15 +619,15 @@ def _update_markdown_versions(md_path: Path, version: str) -> None:
 
 
 def _warn_on_markdown_update_failure(md_path: Path, version: str) -> None:
-    """Emit a warning if updating Markdown snippets raises an expected error."""
+    """Emit a structured log if updating Markdown snippets raises an expected error."""
     try:
         _update_markdown_versions(md_path, version)
-    except (TOMLKitError, OSError) as exc:
-        logger.warning(
-            "Failed to update Markdown fence versions in %s to %s: %s",
+    except (TOMLKitError, OSError):
+        logger.exception(
+            "Failed to update Markdown fence versions in %s to %s",
             md_path,
             version,
-            exc,
+            exc_info=True,
         )
 
 

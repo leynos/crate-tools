@@ -129,10 +129,10 @@ def test_update_markdown_versions_behavior(
         assert updated == expected_text
 
 
-def test_warn_on_markdown_update_failure_logs_warning(
+def test_warn_on_markdown_update_failure_logs_exception(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Log a warning when Markdown updates raise expected exceptions."""
+    """Log the exception with traceback when Markdown updates raise expected errors."""
 
     def raise_toml_error(path: Path, version: str) -> None:  # pragma: no cover - helper
         raise TOMLKitError("boom")
@@ -143,18 +143,18 @@ def test_warn_on_markdown_update_failure_logs_warning(
         "crate_tools.bump_version._update_markdown_versions",
         raise_toml_error,
     )
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("ERROR"):
         _warn_on_markdown_update_failure(md_path, "2.0.0")
     assert any(
         "Failed to update Markdown fence versions" in record.getMessage()
         for record in caplog.records
-    ), "expected warning log when Markdown update raises TOMLKitError"
+    ), "expected error log when Markdown update raises TOMLKitError"
 
 
 def test_warn_on_markdown_update_success_is_silent(
     tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Produce no warnings when Markdown updates succeed."""
+    """Avoid logging when Markdown updates succeed."""
 
     def noop(_: Path, __: str) -> None:  # pragma: no cover - helper
         return
@@ -165,9 +165,9 @@ def test_warn_on_markdown_update_success_is_silent(
         "crate_tools.bump_version._update_markdown_versions",
         noop,
     )
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("ERROR"):
         _warn_on_markdown_update_failure(md_path, "2.0.0")
-    assert not caplog.records, "no warnings expected when Markdown update succeeds"
+    assert not caplog.records, "no error logs expected when Markdown update succeeds"
 
 
 def test_update_markdown_preserves_trailing_newline(tmp_path: Path) -> None:
