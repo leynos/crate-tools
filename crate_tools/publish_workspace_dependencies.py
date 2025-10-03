@@ -10,7 +10,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from publish_patch import REPLACEMENTS, apply_replacements
+if __package__ in {None, ""}:
+    from publish_patch import REPLACEMENTS, apply_replacements
+else:
+    from crate_tools.publish_patch import REPLACEMENTS, apply_replacements
 
 __all__ = ["apply_workspace_replacements"]
 
@@ -22,7 +25,6 @@ def _compute_valid_targets(
     crates: tuple[str, ...] | None,
 ) -> tuple[tuple[str, ...], set[str]]:
     """Determine which crates should receive replacement updates."""
-
     if crates is None:
         return tuple(REPLACEMENTS), set()
 

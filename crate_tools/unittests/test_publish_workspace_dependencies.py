@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import typing as typ
 
-import publish_workspace_dependencies as dependencies
 import pytest
+
+from crate_tools import publish_workspace_dependencies as dependencies
 
 if typ.TYPE_CHECKING:
     from pathlib import Path

@@ -14,13 +14,13 @@ import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
-if typ.TYPE_CHECKING:
-    import collections.abc as cabc
-else:  # pragma: no cover - runtime placeholder for type checking imports
-    cabc: typ.Any = None
-
 from tomlkit import TOMLDocument, dumps, inline_table, parse
 from tomlkit.items import InlineTable, Table
+
+if typ.TYPE_CHECKING:
+    from collections import abc as cabc
+else:  # pragma: no cover - runtime placeholder for type-only imports
+    cabc = typ.cast("type[object]", object)
 
 
 @dc.dataclass(frozen=True)
@@ -172,10 +172,14 @@ def update_dependency(
 
     """
     try:
-        section = document[patch.section]
+        section_item = document[patch.section]
     except KeyError as error:
         message = f"expected section [{patch.section}] in {manifest}"
         raise SystemExit(message) from error
+    if not isinstance(section_item, Table | InlineTable):
+        message = f"expected section [{patch.section}] in {manifest}"
+        raise SystemExit(message)
+    section = typ.cast("cabc.MutableMapping[str, typ.Any]", section_item)
     try:
         existing = section[patch.name]
     except KeyError as error:
@@ -212,10 +216,11 @@ def extract_existing_items(value: object) -> tuple[tuple[str, object], ...]:
     {'default-features': False}
 
     """
-    if isinstance(value, (Table, InlineTable)):
+    if isinstance(value, Table | InlineTable):
+        table_value = typ.cast("cabc.Mapping[str, typ.Any]", value)
         return tuple(
             (key, item)
-            for key, item in value.items()
+            for key, item in table_value.items()
             if key not in {"workspace", "path", "version"}
         )
     return ()
@@ -257,13 +262,14 @@ def build_inline_dependency(
     {'version': '1.0.0'}
 
     """
-    dependency = inline_table()
+    dependency: InlineTable = inline_table()
     if include_local_path:
         dependency["path"] = path
     dependency["version"] = version
     for key, item in extra_items:
         dependency[key] = item
-    dependency.trailing_comma = False
+    cast_dependency = typ.cast("typ.Any", dependency)
+    cast_dependency.trailing_comma = False
     return dependency
 
 
