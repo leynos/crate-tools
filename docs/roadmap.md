@@ -2,7 +2,7 @@
 
 Version: 1.0\
 Status: Proposed\
-Date: 05 October 2025\
+Date: 05 October 2025
 
 ## 1. Introduction
 
