@@ -1,258 +1,186 @@
-# Design Document: Lading Crate Management Tool
+# Lading Tool Development Roadmap
 
-Version: 1.0\
-Status: Proposed\
-Date: 05 October 2025
+## Phase 1: Foundation and Core Abstraction
 
-## 1. Introduction
+**Objective:** Establish the foundational structure of the `lading` tool, including the CLI, configuration management, and workspace discovery. This phase decouples the logic from the old repository-specific scripts and creates a solid base for the new, generalised functionality.
 
-### 1.1. Purpose
+---
 
-This document specifies the design for a generalised, configuration-driven Python utility named `lading`. This tool will streamline versioning and publication workflows for arbitrary Rust workspaces. It is intended to supersede and replace the existing, repository-specific `bump_version.py` and `run_publish_check.py` scripts, abstracting their core logic into a reusable and robust command-line application.
+### **Step 1.1: Project Scaffolding and CLI Structure**
 
-### 1.2. Scope
-
-The project encompasses the following key deliverables:
-
-1. A unified command-line interface (CLI) tool, `lading`, built with `cyclopts`, providing `bump` and `publish` subcommands.
-2. A single, unified TOML configuration file, `lading.toml`, to define workspace-specific behaviours, minimising the need for command-line arguments.
-3. A workspace discovery mechanism that infers the dependency graph, crate locations, and publication order by parsing the output of `cargo metadata`.
-4. A `bump` command to propagate version changes across the workspace, including `Cargo.toml` files for both the workspace and individual crates, and to synchronise documentation files.
-5. A `publish` command to execute pre-publish checks and publish crates to a registry in the correct topological order, with support for both dry-run and live modes.
-6. Support for the `readme.workspace = true` manifest key, ensuring the workspace's `README.md` is copied to member crates before packaging.
-
-### 1.3. Goals
-
-- **Decoupling:** Eliminate hardcoded paths, crate names, and repository-specific assumptions from the tooling.
-- **Generalisation:** Create a tool that can be applied to any Rust workspace with minimal configuration.
-- **Automation:** Reduce manual effort and the risk of human error in release processes.
-- **Configuration over Code:** Favour declarative configuration in `lading.toml` over imperative logic within the tool itself.
-- **Clarity and Maintainability:** Establish a clean, well-tested Python codebase that is easy to understand and extend.
-
-### 1.4. Current coupling
+**Description:** Create the new Python project structure for `lading` and implement the basic command-line interface using `cyclopts`.
 
-#### `run_publish_check.py`
-- The workflow is driven by the statically defined
-  `PUBLISHABLE_CRATES` tuple imported from `publish_workspace_members`, which
-  hard-codes the crate list and release ordering for this repository.
-- Crate directories are resolved under `<workspace>/crates/<name>`, which only
-  matches the current workspace layout and fails for workspaces that colocate
-  crates elsewhere.
-- Live publish commands and the locked publish variant are keyed off concrete
-  crate names, making the publish pipeline unusable when the workspace contains
-  a different set of packages.
-- The dry-run mode packages one crate and checks others based on crate names,
-  which will not hold in a generic workspace.
-
-#### `bump_version.py`
-- Member version updates assume that `ortho_config` should bump
-  `ortho_config_macros` together, coupling the script to rstest-bdd-specific
-  crates.
-- Documentation updates only rewrite TOML fences that reference the
-  `ortho_config` dependency and only touch `README.md` and
-  `docs/users-guide.md`, missing other files in a different workspace layout.
-- The script derives the workspace root as two directories above the script,
-  preventing reuse when the tools are vendored into another project or invoked
-  against a different repository.
+**Tasks:**
 
-## 2. Core Components
+- [ ] **Initialise New Project:**
 
-### 2.1. The `lading` Command-Line Interface
+  - **Outcome:** A new Python package named `lading` is created with a `pyproject.toml` file.
+  - **Completion Criteria:** The project is configured with `uv`, `ruff`, and `pytest`. The directory structure matches the one outlined in the design document.
 
-The primary user interaction point will be the `lading` CLI. It will be implemented using the `cyclopts` library to provide a modern, type-annotated, and environment-aware interface.
+- [ ] **Implement `lading` CLI Shell:**
 
-The structure will be as follows:
+  - **Outcome:** A `cyclopts`-based CLI application is implemented with `bump` and `publish` subcommands.
+  - **Completion Criteria:** The CLI runs and correctly dispatches to placeholder functions for each subcommand. It accepts the global `--workspace-root` option.
 
-```shell
-lading [--workspace-root <path>] <subcommand> [options]
-```
+- [ ] **Configuration Loading:**
 
-- `--workspace-root`: An optional global flag to specify the path to the Rust workspace root. If omitted, it defaults to the current working directory.
-- **Subcommands:**
+  - **Outcome:** The tool can locate and parse a `lading.toml` file from the workspace root.
+  - **Completion Criteria:** A Pydantic or dataclass model for `lading.toml` is defined. The CLI successfully loads and validates the configuration file, making its values accessible to the application.
 
-- `bump`: Manages version bumping.
-- `publish`: Manages the publication process.
+---
 
-### 2.2. Configuration: `lading.toml`
+### **Step 1.2: Workspace Discovery and Modelling**
 
-A `lading.toml` file located at the workspace root will define the tool's behaviour. The design prioritises inference to keep this file as minimal as possible.
+**Description:** Implement the core logic for inspecting a Rust workspace using `cargo metadata`.
 
-**Schema Definition:**
+**Tasks:**
 
-```toml
-# lading.toml
+- [ ] **Implement `cargo metadata` Wrapper:**
 
-# `bump` table: Configuration for the 'bump' command.
-[bump]
-# A list of glob patterns for documentation files to update with the new version.
-# If unset, the tool will not attempt to modify any documentation files.
-# Example: doc_files = ["README.md", "docs/**/*.md"]
-doc_files = []
+  - **Outcome:** A Python function exists that executes `cargo metadata --format-version 1` as a subprocess and captures its JSON output.
+  - **Completion Criteria:** The function correctly handles command execution errors and returns the parsed JSON data. It is covered by unit tests using a mocked subprocess.
 
-# A list of crate names to exclude from the version bump process.
-# The tool will infer all publishable crates by default and apply
-# version bump to these.
-# exclude = []
+- [ ] **Develop Workspace Data Model:**
 
-# `publish` table: Configuration for the 'publish' command.
-[publish]
-# A list of crate names to exclude from the publishing process.
-# Useful for examples, internal tools, or private crates within the workspace.
-# The tool will infer all publishable crates by default.
-# exclude = []
+  - **Outcome:** A set of Pydantic or dataclass models represents the workspace graph, including crates, dependencies, and manifest paths.
+  - **Completion Criteria:** The models can be successfully instantiated from the JSON output of `cargo metadata` for a representative test workspace.
 
-# Optional explicit ordering for publication. If not specified, the tool
-# will determine the order topologically from the dependency graph.
-# This should only be used to resolve ambiguity or enforce a specific sequence.
-# Crate names listed here must be valid members of the workspace.
-# order = ["crate-a", "crate-b"]
+- [ ] **Integrate Discovery into CLI:**
 
-# Strategy for stripping [patch.crates-io] directives from Cargo.toml during
-# publication. This is often necessary to ensure the registry uses published
-# versions of workspace dependencies instead of local path overrides.
-#
-# Possible values:
-# - "all": The entire [patch.crates-io] section is removed from the temporary
-#   workspace manifest before any checks are run.
-# - "per-crate": Before publishing each crate, its specific entry is removed
-#   from the [patch.crates-io] section. This allows subsequent crates in the
-#   publish order to still resolve local paths.
-# - false: No patches are stripped.
-#
-# If unset, the tool defaults to "all" for dry runs and "per-crate" for live runs.
-strip_patches = "per-crate"
+  - **Outcome:** The `lading` CLI builds the workspace model upon invocation.
+  - **Completion Criteria:** Both `bump` and `publish` commands have access to the complete, populated workspace model.
 
-```
+## Phase 2: `lading bump` Subcommand Implementation
 
-### 2.3. Workspace Discovery and Model
+**Objective:** Deliver a fully functional, configuration-driven `bump` command that correctly propagates version changes across all relevant files in a generic Rust workspace.
 
-The tool's internal representation of the workspace is critical for its operation. This model will be constructed at runtime by executing `cargo metadata --format-version 1` and parsing its JSON output. This approach is superior to manual TOML parsing as it correctly handles path dependencies, build scripts, and complex workspace configurations.
+---
 
-The discovery process will populate an internal data structure representing the workspace graph, containing:
+### **Step 2.1: Version Propagation in `Cargo.toml`**
 
-- **Workspace Root:** The absolute path to the workspace directory.
-- **Crate List:** A collection of all crates, each containing:
+**Description:** Implement the core logic for updating version numbers in the workspace and member crate manifests.
 
-- `name`: The crate name (e.g., `my-crate`).
-- `version`: The current version string.
-- `path`: The absolute path to the crate's root directory.
-- `manifest_path`: The absolute path to the crate's `Cargo.toml`.
-- `publish`: A boolean indicating if the crate is intended for publication (derived from `package.publish` in `Cargo.toml`).
-- `dependencies`: A list of its dependencies within the workspace.
-- `readme_is_workspace`: A boolean flag derived from checking if `package.readme.workspace` is `true`.
+**Tasks:**
 
-This internal graph enables reliable dependency resolution and topological sorting for the `publish` command.
+- [ ] **Update Workspace and Member Versions:**
 
-## 3. `bump` Subcommand Design
+  - **Outcome:** The `bump` command can modify the `version` field in the main `Cargo.toml` and all member `Cargo.toml` files.
+  - **Completion Criteria:** An integration test confirms that running `lading bump 1.2.3` on a fixture workspace results in all `package.version` fields being updated to `1.2.3`.
 
-The `bump` command will synchronise versions across the workspace.
+- [ ] **Update Internal Dependency Versions:**
 
-**Command Signature:**
+  - **Outcome:** The command updates the version specifiers for all dependencies that are internal to the workspace.
+  - **Completion Criteria:** An integration test verifies that `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]` sections are correctly updated to point to the new workspace version, preserving operators like `^` or `~`.
 
-```shell
-lading bump <new_version> [--dry-run]
-```
+- [ ] **Implement `--dry-run` Mode for Bumping:**
 
-- `<new_version>`: The new semantic version string (e.g., `1.2.3`). This is a required argument.
-- `--dry-run`: If present, the command will report all changes it would make without writing to any files.
+  - **Outcome:** The `--dry-run` flag prevents any file modifications and instead prints a summary of intended changes.
+  - **Completion Criteria:** Running `lading bump 1.2.3 --dry-run` produces a report of all files that would be changed, and a subsequent check confirms no files were actually modified.
 
-**Execution Flow:**
+---
 
-1. **Discover Workspace:** Build the internal workspace model.
-2. **Update Workspace **`Cargo.toml`**:** Set `workspace.package.version` to `<new_version>`.
-3. **Update Member Crates:** For each crate in the workspace (not just publishable ones):
+### **Step 2.2: Documentation and README Synchronisation**
 
-- Update `package.version` in its `Cargo.toml`.
-- Iterate through its `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]`. If a dependency is a workspace member, update its version string to match `<new_version>`, preserving any existing version operators (e.g., `^`, `~`). This prevents version drift between internal crates.
-4. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is `true`:
+**Description:** Implement the logic for updating documentation files and handling workspace READMEs.
 
-- Copy the `README.md` file from the workspace root to the crate's directory, overwriting any existing file. This action will be performed _before_ any packaging step in the `publish` command but is conceptually part of the versioning workflow. The `bump` command will validate that this is possible.
-5. **Update Documentation Files:**
+**Tasks:**
 
-- Read the `bump.doc_files` glob patterns from `lading.toml`.
-- For each matching file, scan for TOML code fences (```toml).
-- Within each fence, parse the content and update the version of any dependency that is also a workspace member to `<new_version>`. This replaces the previous hardcoded logic.
-6. **Report Changes:** Output a summary of all files that were (or would be) modified.
+- [ ] **Implement Configurable Documentation Updates:**
 
-## 4. `publish` Subcommand Design
+  - **Outcome:** The `bump` command updates version numbers within TOML code fences in documentation files specified by `bump.doc_files` in `lading.toml`.
+  - **Completion Criteria:** A test case with a fixture workspace containing a `README.md` with a TOML snippet confirms the version inside the snippet is correctly updated.
 
-The `publish` command orchestrates the publication of crates to the designated registry.
+- [ ] **Implement Workspace README Handling:**
 
-**Command Signature:**
+  - **Outcome:** The `publish` command's preparation step correctly copies the workspace `README.md` to member crates that have `package.readme.workspace = true` set.
+  - **Completion Criteria:** An end-to-end dry-run test of the `publish` command verifies that the README file is correctly staged for a designated crate in the temporary build directory.
 
-```shell
-lading publish [--dry-run] [--allow-dirty]
-```
+## Phase 3: `lading publish` Subcommand Implementation
 
-- `--live`: By default, the command simulates the entire process, including `cargo package` and `cargo publish --dry-run`, without uploading to the registry. Specifying `--live` takes the process to completion.
-- `--allow-dirty`: Allows the command to proceed even if the Git working tree is dirty.
+**Objective:** Deliver a robust `publish` command that safely and correctly publishes workspace crates in the right order, with comprehensive pre-flight checks.
 
-**Execution Flow:**
+---
 
-1. **Discover Workspace:** Build the internal workspace model.
-2. **Determine Publishable Crates:**
+### **Step 3.1: Publication Planning and Pre-flight Checks**
 
-  - Filter the crate list to include only those where `publish` is not `false`.
-  - Remove any crates listed in `publish.exclude` from `lading.toml`.
+**Description:** Implement the logic to determine which crates to publish, in what order, and to validate the workspace state before any publication actions occur.
 
-3. **Determine Publish Order:**
+**Tasks:**
 
-  - If `publish.order` is defined in `lading.toml`, validate that it contains all publishable crates and use this order.
-  - If `publish.order` is not defined, perform a topological sort on the dependency graph of publishable crates to generate the correct publication sequence. If the graph contains cycles, the command will abort with an error.
+- [ ] **Determine Publishable Crates:**
 
-4. **Prepare Workspace Manifest**: Within the temporary clone of the repository, determine the patch stripping strategy based on the publish.strip_patches configuration and the execution mode (--dry-run flag).
+  - **Outcome:** The `publish` command can identify all publishable crates from the workspace model.
+  - **Completion Criteria:** The logic correctly filters out crates with `publish = false` and those listed in the `publish.exclude` configuration.
 
-  - If strip_patches is "all" (or is unset and this is a dry run), remove the entire [patch.crates-io] section from the Cargo.toml.
+- [ ] **Implement Topological Sort for Publish Order:**
 
-5. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in a clean, temporary clone of the repository to ensure integrity:
+  - **Outcome:** The command can generate a valid publication order based on the workspace dependency graph.
+  - **Completion Criteria:** The implementation correctly sorts a test case with a multi-level dependency chain and correctly reports an error for a workspace with a dependency cycle. The explicit `publish.order` configuration is also honoured when present.
 
-  - Run `cargo check --all-targets` for the entire workspace.
-  - Run `cargo test --all-targets` for the entire workspace.
+- [ ] **Implement Pre-Publish Checks:**
 
-6. **Iterate and Publish:** For each crate in the determined order:
+  - **Outcome:** The command executes `cargo check` and `cargo test` in a clean, temporary clone of the workspace before proceeding.
+  - **Completion Criteria:** A test confirms that the publish command fails if either of the pre-flight checks fails. The `--allow-dirty` flag is correctly handled.
 
-- **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is unset and this is a live run), remove the specific patch entry for the current crate from the Cargo.toml in the temporary clone.
-- **README Handling:** If the crate has `readme.workspace = true`, copy the workspace `README.md` into the crate's directory within the temporary clone.
-- **Package:** Run `cargo package` to create the `.crate` file and verify its contents.
-- **Publish:** Run `cargo publish`. If `--dry-run` is active (default behaviour), the `--dry-run` flag will be passed to `cargo publish`. The tool will check the command's output for confirmation. It will also gracefully handle cases where a specific version has already been published, logging a warning and proceeding to the next crate.
+---
 
-## 5. Refactoring and Project Structure
+### **Step 3.2: Crate Packaging and Publication**
 
-The existing code from `crate_tools` will be refactored into a new Python package structure for `lading`.
+**Description:** Implement the final steps of packaging each crate and interacting with the `cargo publish` command.
 
-**Proposed Directory Structure:**
+**Tasks:**
 
-```plaintext
-lading/
-├── __init__.py
-├── cli.py          # Cyclopts app definition and command wiring
-├── commands/
-│   ├── __init__.py
-│   ├── bump.py     # Logic for the 'bump' subcommand
-│   └── publish.py  # Logic for the 'publish' subcommand
-├── config.py       # Pydantic models for lading.toml
-├── workspace.py    # Workspace discovery and graph model
-└── toml_utils.py   # Helpers for manipulating TOML files
-tests/
-├── conftest.py
-├── fixtures/
-│   └── simple_workspace/
-│       ├── Cargo.toml
-│       └── lading.toml
-│       └── ...
-└── test_*.py
-pyproject.toml
-```
+- [ ] **Implement Configurable Patch Stripping:**
 
-This structure separates concerns, improves testability, and establishes a clear architecture for future development.
+  - **Outcome:** The command correctly modifies the workspace `Cargo.toml` in the temporary clone according to the `publish.strip_patches` strategy (`all`, `per-crate`, or `false`).
+  - **Completion Criteria:** Unit tests verify that the manifest is correctly manipulated for each of the three strategies.
 
-## 6. Testing Strategy
+- [ ] **Implement Crate Packaging Loop:**
 
-A robust testing strategy is essential for a tool that modifies source files and performs releases.
+  - **Outcome:** The command iterates through the publish list, executing `cargo package` for each crate.
+  - **Completion Criteria:** A dry-run test confirms that `cargo package` is called for each publishable crate in the correct order.
 
-- **Unit Tests:** Each module (`config.py`, `workspace.py`, `toml_utils.py`) will have comprehensive unit tests. Logic within the `bump` and `publish` commands will be unit-tested with mocked filesystem and subprocess calls.
-- **Integration Tests:** The CLI itself (`cli.py`) will be tested using `cyclopts.testing.invoke`. These tests will run against mock workspaces defined in `tests/fixtures/` to verify command-line parsing, configuration loading, and the orchestration of different modules.
-- **End-to-End Tests:** A small suite of end-to-end tests will operate on temporary Git repositories. These tests will initialise a Rust workspace, commit a `lading.toml`, and then execute `lading bump` and `lading publish --dry-run`, asserting that the files are correctly modified and the `cargo` commands are executed in the right sequence.
+- [ ] **Implement `cargo publish` Execution:**
 
-This multi-layered approach will ensure correctness from the lowest-level utilities to the highest-level user-facing commands.
+  - **Outcome:** The command executes `cargo publish` for each crate, supporting both dry-run and live modes.
+  - **Completion Criteria:** A dry-run test verifies that `cargo publish --dry-run` is called correctly. The logic gracefully handles and logs when a crate version is already published, then continues to the next crate.
 
+## Phase 4: Stabilisation and Documentation
+
+**Objective:** Ensure the `lading` tool is robust, well-tested, and has clear documentation for end-users.
+
+---
+
+### **Step 4.1: Testing and Quality Assurance**
+
+**Description:** Finalise the test suite, focusing on edge cases and end-to-end behaviours.
+
+**Tasks:**
+
+- [ ] **Achieve High Test Coverage:**
+
+  - **Outcome:** The entire `lading` codebase has a high level of unit and integration test coverage.
+  - **Completion Criteria:** Code coverage reports show over 90% line coverage for all new modules.
+
+- [ ] **Create End-to-End Test Suite:**
+
+  - **Outcome:** A suite of tests exists that covers the full user workflow in a temporary Git repository.
+  - **Completion Criteria:** At least one end-to-end test exists for `bump` and one for `publish --dry-run` that validates the full sequence of operations on a non-trivial fixture workspace.
+
+---
+
+### **Step 4.2: User Documentation and Release**
+
+**Description:** Prepare user-facing documentation and package the tool for distribution.
+
+**Tasks:**
+
+- [ ] **Write User Guide:**
+
+  - **Outcome:** A comprehensive `README.md` or set of documentation files exists for the `lading` project.
+  - **Completion Criteria:** The documentation includes an installation guide, a tutorial, and a complete reference for the `lading.toml` configuration file.
+
+- [ ] **Package for PyPI:**
+
+  - **Outcome:** The `lading` tool is packaged as a standard Python wheel.
+  - **Completion Criteria:** The `pyproject.toml` is fully configured for building a distributable package, and a successful build can be triggered.
