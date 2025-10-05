@@ -12,12 +12,12 @@
 
 **Tasks:**
 
-- [ ] **Initialise New Project:**
+- [x] **Initialise New Project:**
 
   - **Outcome:** A new Python package named `lading` is created with a `pyproject.toml` file.
   - **Completion Criteria:** The project is configured with `uv`, `ruff`, and `pytest`. The directory structure matches the one outlined in the design document.
 
-- [ ] **Implement `lading` CLI Shell:**
+- [x] **Implement `lading` CLI Shell:**
 
   - **Outcome:** A `cyclopts`-based CLI application is implemented with `bump` and `publish` subcommands.
   - **Completion Criteria:** The CLI runs and correctly dispatches to placeholder functions for each subcommand. It accepts the global `--workspace-root` option.
