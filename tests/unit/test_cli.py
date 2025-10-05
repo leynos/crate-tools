@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 import typing as typ
 
 import pytest
@@ -15,6 +16,25 @@ from lading.utils import normalise_workspace_root
 if typ.TYPE_CHECKING:
     from pathlib import Path
     from types import ModuleType
+
+
+@dataclass(frozen=True)
+class CommandDispatchCase:
+    """Test case for command dispatch validation."""
+
+    command_module: ModuleType
+    command_name: str
+    placeholder_text: str
+    cli_args: list[str]
+
+
+@dataclass(frozen=True)
+class ExceptionHandlingCase:
+    """Test case for exception handling validation."""
+
+    exception: BaseException
+    expected_exit_code: int
+    expected_message: str
 
 
 @pytest.mark.parametrize(
@@ -71,19 +91,19 @@ def test_normalise_workspace_root_defaults_to_cwd(
 
 
 @pytest.mark.parametrize(
-    ("command_module", "command_name", "placeholder_text", "cli_args"),
+    "case",
     [
-        (
-            bump_command,
-            "bump",
-            "bump placeholder",
-            ["--workspace-root", "{tmp_path}", "bump"],
+        CommandDispatchCase(
+            command_module=bump_command,
+            command_name="bump",
+            placeholder_text="bump placeholder",
+            cli_args=["--workspace-root", "{tmp_path}", "bump"],
         ),
-        (
-            publish_command,
-            "publish",
-            "publish placeholder",
-            ["publish", "--workspace-root", "{tmp_path}"],
+        CommandDispatchCase(
+            command_module=publish_command,
+            command_name="publish",
+            placeholder_text="publish placeholder",
+            cli_args=["publish", "--workspace-root", "{tmp_path}"],
         ),
     ],
 )
@@ -91,26 +111,23 @@ def test_main_dispatches_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    command_module: ModuleType,
-    command_name: str,
-    placeholder_text: str,
-    cli_args: list[str],
+    case: CommandDispatchCase,
 ) -> None:
     """Route subcommands through their placeholder implementations."""
     called: dict[str, Path] = {}
 
     def fake_run(workspace_root: Path) -> str:
         called["workspace_root"] = workspace_root
-        return placeholder_text
+        return case.placeholder_text
 
-    monkeypatch.setattr(command_module, "run", fake_run)
-    args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in cli_args]
-    assert command_name in args
+    monkeypatch.setattr(case.command_module, "run", fake_run)
+    args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in case.cli_args]
+    assert case.command_name in args
     exit_code = cli.main(args)
     assert exit_code == 0
     assert called["workspace_root"] == tmp_path.resolve()
     captured = capsys.readouterr()
-    assert placeholder_text in captured.out
+    assert case.placeholder_text in captured.out
 
 
 def test_main_handles_missing_subcommand(
@@ -134,30 +151,36 @@ def test_main_handles_invalid_subcommand(
 
 
 @pytest.mark.parametrize(
-    ("exception", "expected_exit_code", "expected_message"),
+    "case",
     [
-        (KeyboardInterrupt(), 130, "Operation cancelled"),
-        (RuntimeError("boom"), 1, "Unexpected error"),
+        ExceptionHandlingCase(
+            exception=KeyboardInterrupt(),
+            expected_exit_code=130,
+            expected_message="Operation cancelled",
+        ),
+        ExceptionHandlingCase(
+            exception=RuntimeError("boom"),
+            expected_exit_code=1,
+            expected_message="Unexpected error",
+        ),
     ],
 )
 def test_main_handles_exceptions(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
-    exception: BaseException,
-    expected_exit_code: int,
-    expected_message: str,
+    case: ExceptionHandlingCase,
 ) -> None:
     """Handle exceptions during command execution."""
 
     def boom(_: typ.Sequence[str]) -> int:
-        raise exception
+        raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
     exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
-    assert exit_code == expected_exit_code
+    assert exit_code == case.expected_exit_code
     captured = capsys.readouterr()
-    assert expected_message in captured.err
+    assert case.expected_message in captured.err
 
 
 def test_cyclopts_invoke_uses_workspace_env(tmp_path: Path) -> None:
