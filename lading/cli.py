@@ -25,6 +25,30 @@ WorkspaceRootOption = typ.Annotated[Path, _WORKSPACE_PARAMETER]
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
 
+def _validate_workspace_value(value: str) -> str:
+    """Ensure ``value`` is usable as a workspace path."""
+    if not value or value.startswith("-"):
+        raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE)
+    return value
+
+
+def _parse_workspace_flag(tokens: typ.Sequence[str], index: int) -> tuple[str, int]:
+    """Parse ``--workspace-root <path>`` form starting at ``index``."""
+    try:
+        candidate = tokens[index + 1]
+    except IndexError as err:
+        raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE) from err
+    workspace = _validate_workspace_value(candidate)
+    return workspace, index + 2
+
+
+def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
+    """Parse ``--workspace-root=<path>`` form for ``argument``."""
+    candidate = argument.partition("=")[2]
+    workspace = _validate_workspace_value(candidate)
+    return workspace, index + 1
+
+
 def _extract_workspace_override(
     tokens: typ.Sequence[str],
 ) -> tuple[str | None, list[str]]:
@@ -41,19 +65,10 @@ def _extract_workspace_override(
     while index < len(tokens):
         current_argument = tokens[index]
         if current_argument == "--workspace-root":
-            try:
-                workspace = tokens[index + 1]
-            except IndexError as err:
-                raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE) from err
-            if workspace.startswith("-"):
-                raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE)
-            index += 2
+            workspace, index = _parse_workspace_flag(tokens, index)
             continue
         if current_argument.startswith("--workspace-root="):
-            workspace = current_argument.partition("=")[2]
-            if not workspace:
-                raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE)
-            index += 1
+            workspace, index = _parse_workspace_equals(current_argument, index)
             continue
         remainder.append(current_argument)
         index += 1
