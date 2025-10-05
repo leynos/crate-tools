@@ -73,6 +73,24 @@ lading [--workspace-root <path>] <subcommand> [options]
 - `bump`: Manages version bumping.
 - `publish`: Manages the publication process.
 
+#### Implementation notes (Step 1.1)
+
+- The initial CLI scaffolding lives in `lading/cli.py` and exposes a
+  `main()` entry point alongside the `cyclopts.App` instance. Packaging wires
+  this entry point through a `lading` console script for ergonomic execution.
+- `--workspace-root` is implemented as a global flag that can be positioned
+  before or after the subcommand. The bootstrapper removes the flag from the
+  argument list, normalises it via the shared `lading.utils.normalise_workspace_root`
+  helper (backed by `plumbum.local`), and stores the resolved path in the
+  `LADING_WORKSPACE_ROOT` environment variable so that Cyclopts can hydrate
+  per-command options without bespoke parsing hooks.
+- Subcommands currently dispatch to placeholder implementations that return a
+  human-readable acknowledgement. The CLI prints these messages to aid smoke
+  testing while we build out real behaviours in later roadmap steps.
+- Behavioural coverage uses `pytest-bdd` with `cmd-mox` spies to exercise the
+  CLI through an actual `python -m lading.cli` invocation. This ensures the
+  scaffolding works end-to-end, not just through direct function calls.
+
 ### 2.2. Configuration: `lading.toml`
 
 A `lading.toml` file located at the workspace root will define the tool's behaviour. The design prioritises inference to keep this file as minimal as possible.
