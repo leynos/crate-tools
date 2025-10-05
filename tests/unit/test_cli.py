@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import os
-from dataclasses import dataclass
 import typing as typ
 
 import pytest
@@ -18,7 +18,7 @@ if typ.TYPE_CHECKING:
     from types import ModuleType
 
 
-@dataclass(frozen=True)
+@dc.dataclass(frozen=True)
 class CommandDispatchCase:
     """Test case for command dispatch validation."""
 
@@ -28,7 +28,7 @@ class CommandDispatchCase:
     cli_args: list[str]
 
 
-@dataclass(frozen=True)
+@dc.dataclass(frozen=True)
 class ExceptionHandlingCase:
     """Test case for exception handling validation."""
 

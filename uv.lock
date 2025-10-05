@@ -14,7 +14,7 @@ wheels = [
 [[package]]
 name = "cmd-mox"
 version = "0.1.0"
-source = { git = "https://github.com/leynos/cmd-mox#88ba9c75c4b6017222721907d500b97c154b39e6" }
+source = { git = "https://github.com/leynos/cmd-mox?rev=f583c279a15760aba5cfd9bddf1fbbe9b1f8c429#f583c279a15760aba5cfd9bddf1fbbe9b1f8c429" }
 
 [[package]]
 name = "colorama"
@@ -56,7 +56,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cmd-mox", git = "https://github.com/leynos/cmd-mox" },
+    { name = "cmd-mox", git = "https://github.com/leynos/cmd-mox?rev=f583c279a15760aba5cfd9bddf1fbbe9b1f8c429" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-bdd" },

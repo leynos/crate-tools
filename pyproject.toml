@@ -22,7 +22,7 @@ dev = [
     "ruff",
     "pyright",
     "pytest-timeout",
-    "cmd-mox@git+https://github.com/leynos/cmd-mox",
+    "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
 ]
 
 [tool.pyright]
