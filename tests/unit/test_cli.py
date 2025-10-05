@@ -14,6 +14,7 @@ from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
+    from types import ModuleType
 
 
 @pytest.mark.parametrize(
@@ -69,24 +70,47 @@ def test_normalise_workspace_root_defaults_to_cwd(
     assert resolved == tmp_path.resolve()
 
 
-def test_main_dispatches_bump(
+@pytest.mark.parametrize(
+    ("command_module", "command_name", "placeholder_text", "cli_args"),
+    [
+        (
+            bump_command,
+            "bump",
+            "bump placeholder",
+            ["--workspace-root", "{tmp_path}", "bump"],
+        ),
+        (
+            publish_command,
+            "publish",
+            "publish placeholder",
+            ["publish", "--workspace-root", "{tmp_path}"],
+        ),
+    ],
+)
+def test_main_dispatches_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    command_module: ModuleType,
+    command_name: str,
+    placeholder_text: str,
+    cli_args: list[str],
 ) -> None:
-    """Route the bump subcommand through the placeholder implementation."""
+    """Route subcommands through their placeholder implementations."""
     called: dict[str, Path] = {}
 
     def fake_run(workspace_root: Path) -> str:
         called["workspace_root"] = workspace_root
-        return "bump placeholder"
+        return placeholder_text
 
-    monkeypatch.setattr(bump_command, "run", fake_run)
-    exit_code = cli.main(["--workspace-root", str(tmp_path), "bump"])
+    monkeypatch.setattr(command_module, "run", fake_run)
+    args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in cli_args]
+    assert command_name in args
+    exit_code = cli.main(args)
     assert exit_code == 0
     assert called["workspace_root"] == tmp_path.resolve()
     captured = capsys.readouterr()
-    assert "bump placeholder" in captured.out
+    assert placeholder_text in captured.out
 
 
 def test_main_handles_missing_subcommand(
@@ -109,58 +133,31 @@ def test_main_handles_invalid_subcommand(
     assert "Unknown command" in captured.out
 
 
-def test_main_dispatches_publish(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Route the publish subcommand through the placeholder implementation."""
-    called: dict[str, Path] = {}
-
-    def fake_run(workspace_root: Path) -> str:
-        called["workspace_root"] = workspace_root
-        return "publish placeholder"
-
-    monkeypatch.setattr(publish_command, "run", fake_run)
-    exit_code = cli.main(["publish", "--workspace-root", str(tmp_path)])
-    assert exit_code == 0
-    assert called["workspace_root"] == tmp_path.resolve()
-    captured = capsys.readouterr()
-    assert "publish placeholder" in captured.out
-
-
-def test_main_handles_keyboard_interrupt(
+@pytest.mark.parametrize(
+    ("exception", "expected_exit_code", "expected_message"),
+    [
+        (KeyboardInterrupt(), 130, "Operation cancelled"),
+        (RuntimeError("boom"), 1, "Unexpected error"),
+    ],
+)
+def test_main_handles_exceptions(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
+    exception: BaseException,
+    expected_exit_code: int,
+    expected_message: str,
 ) -> None:
-    """Gracefully exit when the user cancels execution."""
+    """Handle exceptions during command execution."""
 
     def boom(_: typ.Sequence[str]) -> int:
-        raise KeyboardInterrupt
+        raise exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
     exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
-    assert exit_code == 130
+    assert exit_code == expected_exit_code
     captured = capsys.readouterr()
-    assert "Operation cancelled" in captured.err
-
-
-def test_main_handles_unexpected_exception(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
-) -> None:
-    """Return a non-zero status when unexpected errors surface."""
-
-    def boom(_: typ.Sequence[str]) -> int:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(cli, "_dispatch_and_print", boom)
-    exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
-    assert exit_code == 1
-    captured = capsys.readouterr()
-    assert "Unexpected error" in captured.err
+    assert expected_message in captured.err
 
 
 def test_cyclopts_invoke_uses_workspace_env(tmp_path: Path) -> None:
