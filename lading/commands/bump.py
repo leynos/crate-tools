@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import typing as typ
 
-from plumbum import local
+from lading.utils import normalise_workspace_root
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 def run(workspace_root: Path) -> str:
@@ -15,6 +18,5 @@ def run(workspace_root: Path) -> str:
     to assert that dispatch occurred correctly without constraining future
     behaviour.
     """
-    candidate = local.path(str(workspace_root))
-    root_path = Path(str(candidate)).expanduser().resolve(strict=False)
+    root_path = normalise_workspace_root(workspace_root)
     return f"bump placeholder invoked for {root_path}"

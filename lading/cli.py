@@ -9,9 +9,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from cyclopts import App, Parameter
-from plumbum import local
 
 from . import commands
+from .utils import normalise_workspace_root
 
 WORKSPACE_ROOT_ENV_VAR = "LADING_WORKSPACE_ROOT"
 WORKSPACE_ROOT_REQUIRED_MESSAGE = "--workspace-root requires a value"
@@ -23,15 +23,6 @@ _WORKSPACE_PARAMETER = Parameter(
 WorkspaceRootOption = typ.Annotated[Path, _WORKSPACE_PARAMETER]
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
-
-
-def _normalise_workspace_root(value: Path | str | None) -> Path:
-    """Return an absolute workspace path with ``~`` expanded."""
-    if value is None:
-        return Path.cwd().resolve()
-    candidate = local.path(str(value))
-    expanded = Path(str(candidate)).expanduser()
-    return expanded.resolve(strict=False)
 
 
 def _extract_workspace_override(
@@ -85,7 +76,16 @@ def _workspace_env(value: Path) -> typ.Iterator[None]:
 
 def _dispatch_and_print(tokens: typ.Sequence[str]) -> int:
     """Execute the Cyclopts app and print command results."""
-    result = app(tokens)
+    try:
+        result = app(tokens)
+    except SystemExit as err:
+        code = err.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        print(code, file=sys.stderr)
+        return 1
     if isinstance(result, int):
         return result
     if result is not None:
@@ -95,12 +95,22 @@ def _dispatch_and_print(tokens: typ.Sequence[str]) -> int:
 
 def main(argv: typ.Sequence[str] | None = None) -> int:
     """Entry point for ``python -m lading.cli``."""
-    if argv is None:
-        argv = sys.argv[1:]
-    workspace_override, remaining = _extract_workspace_override(list(argv))
-    workspace_root = _normalise_workspace_root(workspace_override)
-    with _workspace_env(workspace_root):
-        return _dispatch_and_print(remaining)
+    try:
+        if argv is None:
+            argv = sys.argv[1:]
+        workspace_override, remaining = _extract_workspace_override(list(argv))
+        workspace_root = normalise_workspace_root(workspace_override)
+        if not remaining:
+            _dispatch_and_print(remaining)
+            return 2
+        with _workspace_env(workspace_root):
+            return _dispatch_and_print(remaining)
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user.", file=sys.stderr)
+        return 130
+    except Exception as exc:  # noqa: BLE001 - fallback guard for CLI entry point
+        print(f"Unexpected error: {exc}", file=sys.stderr)
+        return 1
 
 
 @app.command
@@ -108,7 +118,7 @@ def bump(
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Return placeholder acknowledgement for the ``bump`` subcommand."""
-    resolved = _normalise_workspace_root(workspace_root)
+    resolved = normalise_workspace_root(workspace_root)
     return commands.bump.run(resolved)
 
 
@@ -117,7 +127,7 @@ def publish(
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Return placeholder acknowledgement for the ``publish`` subcommand."""
-    resolved = _normalise_workspace_root(workspace_root)
+    resolved = normalise_workspace_root(workspace_root)
     return commands.publish.run(resolved)
 
 

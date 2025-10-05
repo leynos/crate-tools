@@ -6,15 +6,19 @@ roadmap Step 1.1 and will expand as additional behaviour lands.
 
 ## Installation and invocation
 
-The CLI ships with the repository. You can execute it directly with Python or
-via `uv`:
+The CLI ships with the repository and can be executed via the `lading` console
+script or directly with Python:
+
+```bash
+uv run lading --help
+```
+
+The console script resolves to :func:`lading.cli.main`. Invoking the
+implementation module remains supported for development workflows:
 
 ```bash
 uv run python -m lading.cli --help
 ```
-
-The entry point lives in `lading/cli.py`; running `python -m lading.cli` is the
-supported launch mechanism during the early development stages.
 
 ## Global options
 

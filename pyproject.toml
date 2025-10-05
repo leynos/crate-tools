@@ -12,6 +12,9 @@ dependencies = [
     "tomlkit==0.13.*",
 ]
 
+[project.scripts]
+lading = "lading.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest",
