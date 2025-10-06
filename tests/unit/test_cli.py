@@ -9,6 +9,7 @@ import typing as typ
 import pytest
 
 from lading import cli
+from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
 from lading.utils import normalise_workspace_root
@@ -35,6 +36,14 @@ class ExceptionHandlingCase:
     exception: BaseException
     expected_exit_code: int
     expected_message: str
+
+
+def _write_minimal_config(directory: Path) -> None:
+    """Persist a configuration file for CLI exercises."""
+    config_path = directory / config_module.CONFIG_FILENAME
+    config_path.write_text(
+        '[bump]\ndoc_files = ["README.md"]\n\n[publish]\nstrip_patches = "all"\n'
+    )
 
 
 @pytest.mark.parametrize(
@@ -114,18 +123,27 @@ def test_main_dispatches_command(
     case: CommandDispatchCase,
 ) -> None:
     """Route subcommands through their placeholder implementations."""
-    called: dict[str, Path] = {}
+    called: dict[str, typ.Any] = {}
 
-    def fake_run(workspace_root: Path) -> str:
+    def fake_run(
+        workspace_root: Path, configuration: config_module.LadingConfig
+    ) -> str:
         called["workspace_root"] = workspace_root
+        called["configuration"] = configuration
         return case.placeholder_text
 
+    _write_minimal_config(tmp_path)
     monkeypatch.setattr(case.command_module, "run", fake_run)
     args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in case.cli_args]
     assert case.command_name in args
     exit_code = cli.main(args)
     assert exit_code == 0
     assert called["workspace_root"] == tmp_path.resolve()
+    configuration = called["configuration"]
+    if case.command_module is bump_command:
+        assert configuration.bump.doc_files == ("README.md",)
+    else:
+        assert configuration.publish.strip_patches == "all"
     captured = capsys.readouterr()
     assert case.placeholder_text in captured.out
 
@@ -142,8 +160,12 @@ def test_main_handles_missing_subcommand(
 
 def test_main_handles_invalid_subcommand(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Report an error when the subcommand is unknown."""
+    _write_minimal_config(tmp_path)
+    monkeypatch.chdir(tmp_path)
     exit_code = cli.main(["invalid"])
     assert exit_code != 0
     captured = capsys.readouterr()
@@ -177,6 +199,7 @@ def test_main_handles_exceptions(
         raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
+    _write_minimal_config(tmp_path)
     exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
     assert exit_code == case.expected_exit_code
     captured = capsys.readouterr()
@@ -185,8 +208,11 @@ def test_main_handles_exceptions(
 
 def test_cyclopts_invoke_uses_workspace_env(tmp_path: Path) -> None:
     """Invoke the Cyclopts app directly with workspace override propagation."""
+    _write_minimal_config(tmp_path)
     result = cli.app(["bump", "--workspace-root", str(tmp_path)])
-    assert result == f"bump placeholder invoked for {tmp_path.resolve()}"
+    assert result == (
+        f"bump placeholder invoked for {tmp_path.resolve()} (doc files: README.md)"
+    )
 
 
 def test_workspace_env_sets_and_restores(

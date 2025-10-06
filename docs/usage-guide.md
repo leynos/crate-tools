@@ -37,12 +37,37 @@ resolved path is also exported as the `LADING_WORKSPACE_ROOT` environment
 variable so that downstream helpers and configuration loading can share the
 location without re-parsing CLI arguments.
 
+## Configuration file: `lading.toml`
+
+`lading` expects a `lading.toml` file at the workspace root. The CLI resolves
+the workspace directory, uses `cyclopts`' TOML loader to read the file, and
+exposes the resulting configuration to the active command. The configuration is
+validated with a dataclass-backed model to ensure that string lists and boolean
+flags conform to the schema described in the design document.
+
+An example minimal configuration looks like:
+
+```toml
+[bump]
+doc_files = ["README.md"]
+
+[publish]
+strip_patches = "all"
+```
+
+If the file is missing or contains invalid values the CLI prints a descriptive
+error and exits with a non-zero status. Commands invoked programmatically via
+`python -m lading.cli` load the configuration on demand, so helper scripts and
+tests can continue to exercise the commands directly as long as the file is
+present.
+
 ## Subcommands
 
 ### `bump`
 
 The `bump` command currently emits a placeholder acknowledgement confirming the
-selected workspace. Future roadmap items will replace this with the version
+selected workspace and summarising the documentation files listed in the
+configuration. Future roadmap items will replace this with the version
 propagation workflow described in the design document.
 
 ```bash
@@ -51,9 +76,9 @@ python -m lading.cli --workspace-root /workspace/path bump
 
 ### `publish`
 
-`publish` is scaffolded in the same fashion. It acknowledges the workspace and
-returns successfully. Publication planning and execution will arrive in later
-phases of the roadmap.
+`publish` is scaffolded in the same fashion. It acknowledges the workspace,
+reports the configured `strip_patches` strategy, and returns successfully.
+Publication planning and execution will arrive in later phases of the roadmap.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish

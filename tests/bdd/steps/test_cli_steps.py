@@ -12,12 +12,18 @@ if typ.TYPE_CHECKING:
 
 from pytest_bdd import given, scenarios, then, when
 
+from lading import config as config_module
+
 scenarios("../features/cli.feature")
 
 
-@given("a workspace directory", target_fixture="workspace_directory")
+@given("a workspace directory with configuration", target_fixture="workspace_directory")
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises."""
+    config_path = tmp_path / config_module.CONFIG_FILENAME
+    config_path.write_text(
+        '[bump]\ndoc_files = ["README.md"]\n\n[publish]\nstrip_patches = "all"\n'
+    )
     return tmp_path
 
 
@@ -72,17 +78,21 @@ def when_invoke_lading_publish(
     return _run_cli(cmd_mox, repo_root, workspace_directory, "publish")
 
 
-@then("the command reports the workspace path")
+@then("the command reports the workspace path and doc files")
 def then_command_reports_workspace(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the placeholder message mentions the workspace."""
     assert cli_run["returncode"] == 0
     workspace = cli_run["workspace"]
-    assert f"bump placeholder invoked for {workspace}" in cli_run["stdout"]
+    stdout = cli_run["stdout"]
+    assert f"bump placeholder invoked for {workspace}" in stdout
+    assert "(doc files: README.md)" in stdout
 
 
-@then("the publish command reports the workspace path")
+@then("the publish command reports the workspace path and strip patches")
 def then_publish_reports_workspace(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the publish placeholder message mentions the workspace."""
     assert cli_run["returncode"] == 0
     workspace = cli_run["workspace"]
-    assert f"publish placeholder invoked for {workspace}" in cli_run["stdout"]
+    stdout = cli_run["stdout"]
+    assert f"publish placeholder invoked for {workspace}" in stdout
+    assert "(strip patches: all)" in stdout

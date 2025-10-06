@@ -22,7 +22,7 @@
   - **Outcome:** A `cyclopts`-based CLI application is implemented with `bump` and `publish` subcommands.
   - **Completion Criteria:** The CLI runs and correctly dispatches to placeholder functions for each subcommand. It accepts the global `--workspace-root` option.
 
-- [ ] **Configuration Loading:**
+- [x] **Configuration Loading:**
 
   - **Outcome:** The tool can locate and parse a `lading.toml` file from the workspace root.
   - **Completion Criteria:** A Pydantic or dataclass model for `lading.toml` is defined. The CLI successfully loads and validates the configuration file, making its values accessible to the application.
