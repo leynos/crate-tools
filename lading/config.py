@@ -32,7 +32,7 @@ class MissingConfigurationError(ConfigurationError):
     """Raised when the configuration file cannot be located."""
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class BumpConfig:
     """Settings for the ``bump`` command."""
 
@@ -44,13 +44,18 @@ class BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
+        unknown = set(mapping) - {"doc_files", "exclude"}
+        if unknown:
+            joined = ", ".join(sorted(unknown))
+            message = f"Unknown bump option(s): {joined}."
+            raise ConfigurationError(message)
         return cls(
             doc_files=_string_tuple(mapping.get("doc_files"), "bump.doc_files"),
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
         )
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class PublishConfig:
     """Settings for the ``publish`` command."""
 
@@ -63,6 +68,11 @@ class PublishConfig:
         """Create a :class:`PublishConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
+        unknown = set(mapping) - {"exclude", "order", "strip_patches"}
+        if unknown:
+            joined = ", ".join(sorted(unknown))
+            message = f"Unknown publish option(s): {joined}."
+            raise ConfigurationError(message)
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
@@ -70,7 +80,7 @@ class PublishConfig:
         )
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class LadingConfig:
     """Strongly-typed representation of ``lading.toml``."""
 
@@ -80,6 +90,11 @@ class LadingConfig:
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
         """Create a :class:`LadingConfig` from a parsed configuration mapping."""
+        unknown = set(mapping) - {"bump", "publish"}
+        if unknown:
+            joined = ", ".join(sorted(unknown))
+            message = f"Unknown configuration section(s): {joined}."
+            raise ConfigurationError(message)
         return cls(
             bump=BumpConfig.from_mapping(
                 _optional_mapping(mapping.get("bump"), "bump")
@@ -115,6 +130,8 @@ def load_from_loader(loader: Toml) -> LadingConfig:
         missing_path = exc.filename or str(loader.path)
         message = f"Configuration file not found: {missing_path}"
         raise MissingConfigurationError(message) from exc
+    except ValueError as exc:
+        raise ConfigurationError(str(exc)) from exc
     if not isinstance(raw, cabc.Mapping):
         message = "Configuration root must be a TOML table."
         raise ConfigurationError(message)

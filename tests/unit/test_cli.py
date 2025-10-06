@@ -38,14 +38,6 @@ class ExceptionHandlingCase:
     expected_message: str
 
 
-def _write_minimal_config(directory: Path) -> None:
-    """Persist a configuration file for CLI exercises."""
-    config_path = directory / config_module.CONFIG_FILENAME
-    config_path.write_text(
-        '[bump]\ndoc_files = ["README.md"]\n\n[publish]\nstrip_patches = "all"\n'
-    )
-
-
 @pytest.mark.parametrize(
     ("tokens", "expected_workspace", "expected_remaining"),
     [
@@ -99,6 +91,7 @@ def test_normalise_workspace_root_defaults_to_cwd(
     assert resolved == tmp_path.resolve()
 
 
+@pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     "case",
     [
@@ -132,7 +125,6 @@ def test_main_dispatches_command(
         called["configuration"] = configuration
         return case.placeholder_text
 
-    _write_minimal_config(tmp_path)
     monkeypatch.setattr(case.command_module, "run", fake_run)
     args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in case.cli_args]
     assert case.command_name in args
@@ -158,13 +150,13 @@ def test_main_handles_missing_subcommand(
     assert "Usage" in captured.out
 
 
+@pytest.mark.usefixtures("minimal_config")
 def test_main_handles_invalid_subcommand(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """Report an error when the subcommand is unknown."""
-    _write_minimal_config(tmp_path)
     monkeypatch.chdir(tmp_path)
     exit_code = cli.main(["invalid"])
     assert exit_code != 0
@@ -201,6 +193,7 @@ def test_main_reports_missing_configuration(
         ),
     ],
 )
+@pytest.mark.usefixtures("minimal_config")
 def test_main_handles_exceptions(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -213,16 +206,15 @@ def test_main_handles_exceptions(
         raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
-    _write_minimal_config(tmp_path)
     exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
     assert exit_code == case.expected_exit_code
     captured = capsys.readouterr()
     assert case.expected_message in captured.err
 
 
+@pytest.mark.usefixtures("minimal_config")
 def test_cyclopts_invoke_uses_workspace_env(tmp_path: Path) -> None:
     """Invoke the Cyclopts app directly with workspace override propagation."""
-    _write_minimal_config(tmp_path)
     result = cli.app(["bump", "--workspace-root", str(tmp_path)])
     assert result == (
         f"bump placeholder invoked for {tmp_path.resolve()} (doc files: README.md)"

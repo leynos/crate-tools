@@ -82,6 +82,34 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "per-crate"
 
 
+def test_load_configuration_rejects_unknown_keys(tmp_path: Path) -> None:
+    """Unknown options should trigger configuration errors."""
+    _write_config(
+        tmp_path,
+        """
+        [publish]
+        unexpected = "value"
+        """,
+    )
+
+    with pytest.raises(config_module.ConfigurationError):
+        config_module.load_configuration(tmp_path)
+
+
+def test_load_configuration_rejects_unknown_sections(tmp_path: Path) -> None:
+    """Unknown tables should trigger configuration errors."""
+    _write_config(
+        tmp_path,
+        """
+        [unknown]
+        value = 1
+        """,
+    )
+
+    with pytest.raises(config_module.ConfigurationError):
+        config_module.load_configuration(tmp_path)
+
+
 def test_load_configuration_requires_file(tmp_path: Path) -> None:
     """Raise a descriptive error when ``lading.toml`` is absent."""
     with pytest.raises(config_module.MissingConfigurationError):

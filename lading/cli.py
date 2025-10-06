@@ -142,19 +142,27 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
         return 1
 
 
+def _run_with_configuration(
+    workspace_root: Path,
+    runner: typ.Callable[[Path, config.LadingConfig], str],
+) -> str:
+    """Execute ``runner`` with a configuration, loading it on demand."""
+    try:
+        configuration = config.current_configuration()
+    except config.ConfigurationNotLoadedError:
+        configuration = config.load_configuration(workspace_root)
+        with config.use_configuration(configuration):
+            return runner(workspace_root, configuration)
+    return runner(workspace_root, configuration)
+
+
 @app.command
 def bump(
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Return placeholder acknowledgement for the ``bump`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    try:
-        configuration = config.current_configuration()
-    except config.ConfigurationNotLoadedError:
-        configuration = config.load_configuration(resolved)
-        with config.use_configuration(configuration):
-            return commands.bump.run(resolved, configuration)
-    return commands.bump.run(resolved, configuration)
+    return _run_with_configuration(resolved, commands.bump.run)
 
 
 @app.command
@@ -163,13 +171,7 @@ def publish(
 ) -> str:
     """Return placeholder acknowledgement for the ``publish`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    try:
-        configuration = config.current_configuration()
-    except config.ConfigurationNotLoadedError:
-        configuration = config.load_configuration(resolved)
-        with config.use_configuration(configuration):
-            return commands.publish.run(resolved, configuration)
-    return commands.publish.run(resolved, configuration)
+    return _run_with_configuration(resolved, commands.publish.run)
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point
