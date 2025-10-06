@@ -116,8 +116,8 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
         workspace_override, remaining = _extract_workspace_override(list(argv))
         workspace_root = normalise_workspace_root(workspace_override)
         if not remaining:
-            _dispatch_and_print(remaining)
-            return 2
+            _dispatch_and_print(remaining)  # Print usage message
+            return 2  # Standard exit code for missing subcommand
         with _workspace_env(workspace_root):
             return _dispatch_and_print(remaining)
     except KeyboardInterrupt:
