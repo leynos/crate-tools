@@ -146,6 +146,22 @@ def current_configuration() -> LadingConfig:
         raise ConfigurationNotLoadedError(message) from exc
 
 
+def _validate_string_sequence(
+    sequence: cabc.Sequence[typ.Any], field_name: str
+) -> tuple[str, ...]:
+    """Validate that ``sequence`` contains only strings and return them."""
+    items: list[str] = []
+    for index, entry in enumerate(sequence):
+        if not isinstance(entry, str):
+            message = (
+                f"{field_name}[{index}] must be a string, "
+                f"got {type(entry).__name__}."
+            )
+            raise ConfigurationError(message)
+        items.append(entry)
+    return tuple(items)
+
+
 def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     """Return a tuple of strings derived from ``value``."""
     if value is None:
@@ -153,16 +169,7 @@ def _string_tuple(value: object, field_name: str) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,)
     if isinstance(value, cabc.Sequence) and not isinstance(value, str | bytes):
-        items: list[str] = []
-        for index, entry in enumerate(value):
-            if not isinstance(entry, str):
-                message = (
-                    f"{field_name}[{index}] must be a string, "
-                    f"got {type(entry).__name__}."
-                )
-                raise ConfigurationError(message)
-            items.append(entry)
-        return tuple(items)
+        return _validate_string_sequence(value, field_name)
     message = (
         f"{field_name} must be a string or a sequence of strings; "
         f"received {type(value).__name__}."
