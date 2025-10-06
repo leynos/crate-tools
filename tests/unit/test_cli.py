@@ -172,6 +172,20 @@ def test_main_handles_invalid_subcommand(
     assert "Unknown command" in captured.out
 
 
+def test_main_reports_missing_configuration(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Return a clear error when configuration is missing."""
+    exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    expected_path = tmp_path.resolve() / config_module.CONFIG_FILENAME
+    assert (
+        f"Configuration error: Configuration file not found: {expected_path}"
+        in captured.err
+    )
+
+
 @pytest.mark.parametrize(
     "case",
     [

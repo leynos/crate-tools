@@ -27,6 +27,15 @@ def given_workspace_directory(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@given(
+    "a workspace directory without configuration",
+    target_fixture="workspace_directory",
+)
+def given_workspace_without_configuration(tmp_path: Path) -> Path:
+    """Provide a workspace root without a configuration file."""
+    return tmp_path
+
+
 def _run_cli(
     cmd_mox: CmdMox,
     repo_root: Path,
@@ -96,3 +105,14 @@ def then_publish_reports_workspace(cli_run: dict[str, typ.Any]) -> None:
     stdout = cli_run["stdout"]
     assert f"publish placeholder invoked for {workspace}" in stdout
     assert "(strip patches: all)" in stdout
+
+
+@then("the CLI reports a missing configuration error")
+def then_cli_reports_missing_configuration(cli_run: dict[str, typ.Any]) -> None:
+    """Assert the CLI surfaces missing configuration errors."""
+    assert cli_run["returncode"] == 1
+    stderr = cli_run["stderr"]
+    expected_path = cli_run["workspace"] / config_module.CONFIG_FILENAME
+    assert (
+        f"Configuration error: Configuration file not found: {expected_path}" in stderr
+    )

@@ -44,6 +44,34 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "all"
 
 
+def test_load_configuration_invalid_strip_patches_bool(tmp_path: Path) -> None:
+    """Reject boolean ``publish.strip_patches`` values."""
+    _write_config(
+        tmp_path,
+        """
+        [publish]
+        strip_patches = true
+        """,
+    )
+
+    with pytest.raises(config_module.ConfigurationError):
+        config_module.load_configuration(tmp_path)
+
+
+def test_load_configuration_invalid_strip_patches_string(tmp_path: Path) -> None:
+    """Reject unexpected string ``publish.strip_patches`` values."""
+    _write_config(
+        tmp_path,
+        """
+        [publish]
+        strip_patches = "unexpected"
+        """,
+    )
+
+    with pytest.raises(config_module.ConfigurationError):
+        config_module.load_configuration(tmp_path)
+
+
 def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     """Missing tables fall back to default values."""
     _write_config(tmp_path, "# empty file still constitutes valid TOML")
@@ -84,6 +112,26 @@ def test_use_configuration_sets_context(tmp_path: Path) -> None:
 
     with config_module.use_configuration(configuration):
         assert config_module.current_configuration() is configuration
+
+    with pytest.raises(config_module.ConfigurationNotLoadedError):
+        config_module.current_configuration()
+
+
+def test_nested_use_configuration_contexts(tmp_path: Path) -> None:
+    """Nested configuration contexts restore the previous configuration."""
+    _write_config(tmp_path, "")
+    config_a = config_module.load_configuration(tmp_path)
+
+    alternate_root = tmp_path.parent / f"{tmp_path.name}_alt"
+    alternate_root.mkdir()
+    _write_config(alternate_root, "")
+    config_b = config_module.load_configuration(alternate_root)
+
+    with config_module.use_configuration(config_a):
+        assert config_module.current_configuration() is config_a
+        with config_module.use_configuration(config_b):
+            assert config_module.current_configuration() is config_b
+        assert config_module.current_configuration() is config_a
 
     with pytest.raises(config_module.ConfigurationNotLoadedError):
         config_module.current_configuration()

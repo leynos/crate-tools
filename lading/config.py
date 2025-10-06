@@ -154,8 +154,7 @@ def _validate_string_sequence(
     for index, entry in enumerate(sequence):
         if not isinstance(entry, str):
             message = (
-                f"{field_name}[{index}] must be a string, "
-                f"got {type(entry).__name__}."
+                f"{field_name}[{index}] must be a string, got {type(entry).__name__}."
             )
             raise ConfigurationError(message)
         items.append(entry)

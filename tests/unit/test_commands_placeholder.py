@@ -37,6 +37,25 @@ def test_command_run_normalises_paths(
     assert str(expected) in message
 
 
+@pytest.mark.parametrize(
+    "command",
+    [bump.run, publish.run],
+)
+def test_command_run_fallbacks_to_current_configuration(
+    command: typ.Callable[[Path], str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Commands fall back to the active configuration when none is provided."""
+    workspace = Path("workspace")
+    monkeypatch.chdir(tmp_path)
+    fallback_config = _make_config()
+    monkeypatch.setattr(config_module, "current_configuration", lambda: fallback_config)
+    message = command(workspace)
+    expected = normalise_workspace_root(workspace)
+    assert str(expected) in message
+
+
 def test_bump_run_mentions_command(tmp_path: Path) -> None:
     """The bump placeholder response includes the command name."""
     message = bump.run(tmp_path, _make_config())
