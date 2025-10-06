@@ -12,18 +12,23 @@ dependencies = [
     "tomlkit==0.13.*",
 ]
 
+[project.scripts]
+lading = "lading.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest",
+    "pytest-bdd",
     "ruff",
     "pyright",
     "pytest-timeout",
+    "cmd-mox@git+https://github.com/leynos/cmd-mox@f583c279a15760aba5cfd9bddf1fbbe9b1f8c429",
 ]
 
 [tool.pyright]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
-include = ["crate_tools"]
+include = ["crate_tools", "lading"]
 exclude = ["crate_tools/unittests", "**/unittests"]
 
 [tool.ruff]
@@ -103,7 +108,14 @@ timeout = 30
 package = true
 
 [tool.setuptools.packages.find]
-include = ["crate_tools", "crate_tools.*", "scripts", "scripts.*"]
+include = [
+    "crate_tools",
+    "crate_tools.*",
+    "lading",
+    "lading.*",
+    "scripts",
+    "scripts.*",
+]
 
 
 [build-system]
