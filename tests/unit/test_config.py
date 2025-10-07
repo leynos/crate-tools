@@ -44,29 +44,51 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "all"
 
 
-def test_load_configuration_invalid_strip_patches_bool(tmp_path: Path) -> None:
-    """Reject boolean ``publish.strip_patches`` values."""
-    _write_config(
-        tmp_path,
-        """
-        [publish]
-        strip_patches = true
-        """,
-    )
-
-    with pytest.raises(config_module.ConfigurationError):
-        config_module.load_configuration(tmp_path)
-
-
-def test_load_configuration_invalid_strip_patches_string(tmp_path: Path) -> None:
-    """Reject unexpected string ``publish.strip_patches`` values."""
-    _write_config(
-        tmp_path,
-        """
-        [publish]
-        strip_patches = "unexpected"
-        """,
-    )
+@pytest.mark.parametrize(
+    "config_body",
+    [
+        pytest.param(
+            """
+            [bump]
+            doc_files = [1]
+            """,
+            id="invalid_sequence_values",
+        ),
+        pytest.param(
+            """
+            [publish]
+            strip_patches = true
+            """,
+            id="invalid_strip_patches_bool",
+        ),
+        pytest.param(
+            """
+            [publish]
+            strip_patches = "unexpected"
+            """,
+            id="invalid_strip_patches_string",
+        ),
+        pytest.param(
+            """
+            [publish]
+            unexpected = "value"
+            """,
+            id="unknown_keys",
+        ),
+        pytest.param(
+            """
+            [unknown]
+            value = 1
+            """,
+            id="unknown_sections",
+        ),
+    ],
+)
+def test_load_configuration_rejects_invalid_values(
+    tmp_path: Path, config_body: str
+) -> None:
+    """Reject invalid configuration values and structures."""
+    _write_config(tmp_path, config_body)
 
     with pytest.raises(config_module.ConfigurationError):
         config_module.load_configuration(tmp_path)
@@ -82,51 +104,9 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     assert configuration.publish.strip_patches == "per-crate"
 
 
-def test_load_configuration_rejects_unknown_keys(tmp_path: Path) -> None:
-    """Unknown options should trigger configuration errors."""
-    _write_config(
-        tmp_path,
-        """
-        [publish]
-        unexpected = "value"
-        """,
-    )
-
-    with pytest.raises(config_module.ConfigurationError):
-        config_module.load_configuration(tmp_path)
-
-
-def test_load_configuration_rejects_unknown_sections(tmp_path: Path) -> None:
-    """Unknown tables should trigger configuration errors."""
-    _write_config(
-        tmp_path,
-        """
-        [unknown]
-        value = 1
-        """,
-    )
-
-    with pytest.raises(config_module.ConfigurationError):
-        config_module.load_configuration(tmp_path)
-
-
 def test_load_configuration_requires_file(tmp_path: Path) -> None:
     """Raise a descriptive error when ``lading.toml`` is absent."""
     with pytest.raises(config_module.MissingConfigurationError):
-        config_module.load_configuration(tmp_path)
-
-
-def test_invalid_sequence_values_raise(tmp_path: Path) -> None:
-    """Reject non-string entries in sequence fields."""
-    _write_config(
-        tmp_path,
-        """
-        [bump]
-        doc_files = [1]
-        """,
-    )
-
-    with pytest.raises(config_module.ConfigurationError):
         config_module.load_configuration(tmp_path)
 
 
