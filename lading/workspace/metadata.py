@@ -63,7 +63,7 @@ def _ensure_command() -> BoundCommand:
     """Return the ``cargo metadata`` command object."""
     try:
         cargo = local["cargo"]
-    except CommandNotFound as exc:  # pragma: no cover - defensive guard
+    except CommandNotFound as exc:
         raise CargoExecutableNotFoundError from exc
     return cargo["metadata", "--format-version", "1"]
 

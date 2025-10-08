@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
 import typing as typ
 
 import pytest
-from cmd_mox.ipc import Invocation
 
 from lading.workspace import (
     CargoExecutableNotFoundError,
@@ -15,6 +13,7 @@ from lading.workspace import (
     load_cargo_metadata,
 )
 from lading.workspace import metadata as metadata_module
+from tests.helpers.workspace_helpers import install_cargo_stub
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -22,33 +21,11 @@ if typ.TYPE_CHECKING:
     from cmd_mox import CmdMox
 
 
-def _install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace ``_ensure_command`` with a shim using :mod:`cmd_mox`."""
-
-    class _StubCommand:
-        def run(
-            self,
-            *,
-            retcode: int | None = None,
-            cwd: str | os.PathLike[str] | None = None,
-        ) -> tuple[int, str, str]:
-            invocation = Invocation(
-                command="cargo",
-                args=["metadata", "--format-version", "1"],
-                stdin="",
-                env=dict(os.environ),
-            )
-            response = cmd_mox._handle_invocation(invocation)
-            return response.exit_code, response.stdout, response.stderr
-
-    monkeypatch.setattr(metadata_module, "_ensure_command", lambda: _StubCommand())
-
-
 def test_load_cargo_metadata_parses_output(
     cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Successful invocations should return parsed JSON payloads."""
-    _install_cargo_stub(cmd_mox, monkeypatch)
+    install_cargo_stub(cmd_mox, monkeypatch)
     payload = {"workspace_root": "./", "packages": []}
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
@@ -117,7 +94,7 @@ def test_load_cargo_metadata_error_scenarios(
     expected_message: str,
 ) -> None:
     """Error cases should raise :class:`CargoMetadataError` with detail."""
-    _install_cargo_stub(cmd_mox, monkeypatch)
+    install_cargo_stub(cmd_mox, monkeypatch)
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=exit_code,
         stdout=stdout,
@@ -128,3 +105,18 @@ def test_load_cargo_metadata_error_scenarios(
         load_cargo_metadata(tmp_path)
 
     assert expected_message in str(excinfo.value)
+
+
+def test_ensure_command_raises_on_missing_executable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify ``CommandNotFound`` is surfaced as ``CargoExecutableNotFoundError``."""
+
+    class _MissingCargo:
+        def __getitem__(self, name: str) -> typ.NoReturn:
+            raise metadata_module.CommandNotFound(name, ["/usr/bin"])
+
+    monkeypatch.setattr(metadata_module, "local", _MissingCargo())
+
+    with pytest.raises(CargoExecutableNotFoundError):
+        metadata_module._ensure_command()
