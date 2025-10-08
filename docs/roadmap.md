@@ -35,7 +35,7 @@
 
 **Tasks:**
 
-- [ ] **Implement `cargo metadata` Wrapper:**
+- [x] **Implement `cargo metadata` Wrapper:**
 
   - **Outcome:** A Python function exists that executes `cargo metadata --format-version 1` as a subprocess and captures its JSON output.
   - **Completion Criteria:** The function correctly handles command execution errors and returns the parsed JSON data. It is covered by unit tests using a mocked subprocess.
