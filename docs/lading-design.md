@@ -154,16 +154,17 @@ The tool's internal representation of the workspace is critical for its operatio
 
 #### Implementation notes (Step 1.2)
 
-- Workspace discovery is anchored in `lading.workspace.metadata`. The module uses
-  `plumbum` to construct `cargo metadata --format-version 1`, normalising the
-  workspace root via `lading.utils.normalise_workspace_root` before invoking the
-  command.
+- Workspace discovery is anchored in `lading.workspace.metadata`. The module
+  uses `plumbum` to construct `cargo metadata --format-version 1`,
+  normalising the workspace root via
+  `lading.utils.normalise_workspace_root` before invoking the command.
 - Failures to locate the `cargo` executable, non-zero exit codes, or malformed
-  JSON payloads raise `CargoMetadataError`. This keeps command execution details
-  contained and provides a consistent error surface for higher layers.
-- The wrapper returns the parsed JSON mapping directly. Later roadmap steps will
-  build dedicated models on top of this structure without re-running the command
-  or reparsing JSON.
+  JSON payloads raise `CargoMetadataError`. This keeps command execution
+  details contained and provides a consistent error surface for higher
+  layers.
+- The wrapper returns the parsed JSON mapping directly. Later roadmap steps
+  will build dedicated models on top of this structure without re-running the
+  command or reparsing JSON.
 
 The discovery process will populate an internal data structure representing the workspace graph, containing:
 

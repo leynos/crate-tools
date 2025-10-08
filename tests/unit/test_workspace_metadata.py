@@ -9,7 +9,11 @@ import typing as typ
 import pytest
 from cmd_mox.ipc import Invocation
 
-from lading.workspace import CargoMetadataError, load_cargo_metadata
+from lading.workspace import (
+    CargoExecutableNotFoundError,
+    CargoMetadataError,
+    load_cargo_metadata,
+)
 from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
@@ -56,6 +60,20 @@ def test_load_cargo_metadata_parses_output(
     assert result == payload
 
 
+def test_load_cargo_metadata_missing_executable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Absent ``cargo`` binaries should raise ``CargoExecutableNotFoundError``."""
+
+    def _raise() -> None:
+        raise CargoExecutableNotFoundError
+
+    monkeypatch.setattr(metadata_module, "_ensure_command", _raise)
+
+    with pytest.raises(CargoExecutableNotFoundError):
+        load_cargo_metadata(tmp_path)
+
+
 def test_load_cargo_metadata_raises_on_failure(
     cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -72,6 +90,23 @@ def test_load_cargo_metadata_raises_on_failure(
     assert "could not read manifest" in str(excinfo.value)
 
 
+def test_load_cargo_metadata_raises_on_empty_output_failure(
+    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fallback errors should mention the failing exit status."""
+    _install_cargo_stub(cmd_mox, monkeypatch)
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=101,
+        stdout="",
+        stderr="",
+    )
+
+    with pytest.raises(CargoMetadataError) as excinfo:
+        load_cargo_metadata(tmp_path)
+
+    assert "cargo metadata exited with status 101" in str(excinfo.value)
+
+
 def test_load_cargo_metadata_validates_json(
     cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -86,3 +121,19 @@ def test_load_cargo_metadata_validates_json(
         load_cargo_metadata(tmp_path)
 
     assert "non-object" in str(excinfo.value)
+
+
+def test_load_cargo_metadata_rejects_invalid_json(
+    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Malformed JSON should produce ``CargoMetadataParseError``."""
+    _install_cargo_stub(cmd_mox, monkeypatch)
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout="{]",
+    )
+
+    with pytest.raises(CargoMetadataError) as excinfo:
+        load_cargo_metadata(tmp_path)
+
+    assert "invalid JSON" in str(excinfo.value)

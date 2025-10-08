@@ -33,9 +33,11 @@ class CargoMetadataInvocationError(CargoMetadataError):
 
     def __init__(self, exit_code: int, stdout: str, stderr: str) -> None:
         """Summarise the failing invocation for the caller."""
-        message = stderr.strip() or stdout.strip()
-        if not message:
-            message = f"cargo metadata exited with status {exit_code}"
+        message = (
+            stderr.strip()
+            or stdout.strip()
+            or f"cargo metadata exited with status {exit_code}"
+        )
         super().__init__(message)
 
 
@@ -68,9 +70,7 @@ def _ensure_command() -> BoundCommand:
 
 def _coerce_text(value: str | bytes) -> str:
     """Normalise process output to text."""
-    if isinstance(value, bytes):
-        return value.decode()
-    return value
+    return value.decode("utf-8") if isinstance(value, bytes) else value
 
 
 def load_cargo_metadata(
