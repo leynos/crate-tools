@@ -90,6 +90,12 @@ lading [--workspace-root <path>] <subcommand> [options]
 - Behavioural coverage uses `pytest-bdd` with `cmd-mox` spies to exercise the
   CLI through an actual `python -m lading.cli` invocation. This ensures the
   scaffolding works end-to-end, not just through direct function calls.
+- Configuration loading is centralised in `lading/config.py`. The module builds
+  a `cyclopts.config.Toml` loader anchored at the workspace root, validates the
+  resulting data with frozen dataclasses, and exposes a context manager so that
+  downstream code can access the active configuration without passing it through
+  every call. The CLI sets up this context before dispatching a subcommand and
+  falls back to on-demand loading when commands are invoked programmatically.
 
 ### 2.2. Configuration: `lading.toml`
 

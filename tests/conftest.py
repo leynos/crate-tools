@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import textwrap
 import typing as typ
 from pathlib import Path
 
@@ -30,3 +31,30 @@ def _restore_workspace_env() -> typ.Iterator[None]:
             os.environ.pop(WORKSPACE_ROOT_ENV_VAR, None)
         else:
             os.environ[WORKSPACE_ROOT_ENV_VAR] = original
+
+
+@pytest.fixture
+def write_config(tmp_path: Path) -> typ.Callable[[str], Path]:
+    """Return a helper that writes ``lading.toml`` into ``tmp_path``."""
+    from lading import config as config_module
+
+    def _write(body: str) -> Path:
+        config_path = tmp_path / config_module.CONFIG_FILENAME
+        config_path.write_text(textwrap.dedent(body).lstrip())
+        return config_path
+
+    return _write
+
+
+@pytest.fixture
+def minimal_config(write_config: typ.Callable[[str], Path]) -> Path:
+    """Persist a representative configuration file for CLI exercises."""
+    return write_config(
+        """
+        [bump]
+        doc_files = ["README.md"]
+
+        [publish]
+        strip_patches = "all"
+        """
+    )

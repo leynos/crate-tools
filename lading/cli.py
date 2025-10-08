@@ -10,7 +10,7 @@ from pathlib import Path
 
 from cyclopts import App, Parameter
 
-from . import commands
+from . import commands, config
 from .utils import normalise_workspace_root
 
 WORKSPACE_ROOT_ENV_VAR = "LADING_WORKSPACE_ROOT"
@@ -118,8 +118,22 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
         if not remaining:
             _dispatch_and_print(remaining)  # Print usage message
             return 2  # Standard exit code for missing subcommand
-        with _workspace_env(workspace_root):
-            return _dispatch_and_print(remaining)
+        previous_config = app.config
+        config_loader = config.build_loader(workspace_root)
+        try:
+            configuration = config.load_from_loader(config_loader)
+        except config.ConfigurationError as exc:
+            print(f"Configuration error: {exc}", file=sys.stderr)
+            return 1
+        app.config = (config_loader,)
+        try:
+            with (
+                _workspace_env(workspace_root),
+                config.use_configuration(configuration),
+            ):
+                return _dispatch_and_print(remaining)
+        finally:
+            app.config = previous_config
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.", file=sys.stderr)
         return 130
@@ -128,13 +142,27 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
         return 1
 
 
+def _run_with_configuration(
+    workspace_root: Path,
+    runner: typ.Callable[[Path, config.LadingConfig], str],
+) -> str:
+    """Execute ``runner`` with a configuration, loading it on demand."""
+    try:
+        configuration = config.current_configuration()
+    except config.ConfigurationNotLoadedError:
+        configuration = config.load_configuration(workspace_root)
+        with config.use_configuration(configuration):
+            return runner(workspace_root, configuration)
+    return runner(workspace_root, configuration)
+
+
 @app.command
 def bump(
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Return placeholder acknowledgement for the ``bump`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    return commands.bump.run(resolved)
+    return _run_with_configuration(resolved, commands.bump.run)
 
 
 @app.command
@@ -143,7 +171,7 @@ def publish(
 ) -> str:
     """Return placeholder acknowledgement for the ``publish`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    return commands.publish.run(resolved)
+    return _run_with_configuration(resolved, commands.publish.run)
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point
