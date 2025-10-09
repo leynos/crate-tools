@@ -91,3 +91,23 @@ Behavioural tests invoke the CLI as an external process and spy on the
 keeps the tests faithful to real user interactions while still providing strict
 control over command invocations. Use the same approach when adding new
 end-to-end scenarios.
+
+## Workspace discovery helpers
+Roadmap Step 1.2 introduces a thin wrapper around `cargo metadata` to
+expose workspace information to both commands and library consumers.
+Import `lading.workspace.load_cargo_metadata` to execute the command
+with the current or explicitly provided workspace root:
+
+```python
+from pathlib import Path
+
+from lading.workspace import load_cargo_metadata
+
+metadata = load_cargo_metadata(Path("/path/to/workspace"))
+print(metadata["workspace_root"])
+```
+
+The helper normalises the workspace path, invokes `cargo metadata --
+format-version 1` using `plumbum`, and returns the parsed JSON mapping.
+Any execution errors or invalid output raise `CargoMetadataError` with a
+descriptive message so callers can present actionable feedback to users.
