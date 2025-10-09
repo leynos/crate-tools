@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 import typing as typ
 
 import pytest
@@ -85,35 +86,53 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
     assert "manifest missing" in str(excinfo.value)
 
 
+@dataclass(frozen=True)
+class ErrorScenario:
+    """Test scenario for cargo metadata error cases."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+    expected_message: str
+
+
 @pytest.mark.parametrize(
-    ("exit_code", "stdout", "stderr", "expected_message"),
+    "scenario",
     [
         pytest.param(
-            101,
-            "",
-            "could not read manifest",
-            "could not read manifest",
+            ErrorScenario(
+                exit_code=101,
+                stdout="",
+                stderr="could not read manifest",
+                expected_message="could not read manifest",
+            ),
             id="non_zero_exit_with_stderr",
         ),
         pytest.param(
-            101,
-            "",
-            "",
-            "cargo metadata exited with status 101",
+            ErrorScenario(
+                exit_code=101,
+                stdout="",
+                stderr="",
+                expected_message="cargo metadata exited with status 101",
+            ),
             id="non_zero_exit_empty_output",
         ),
         pytest.param(
-            0,
-            "[]",
-            "",
-            "non-object",
+            ErrorScenario(
+                exit_code=0,
+                stdout="[]",
+                stderr="",
+                expected_message="non-object",
+            ),
             id="non_object_json",
         ),
         pytest.param(
-            0,
-            "{]",
-            "",
-            "invalid JSON",
+            ErrorScenario(
+                exit_code=0,
+                stdout="{]",
+                stderr="",
+                expected_message="invalid JSON",
+            ),
             id="malformed_json",
         ),
     ],
@@ -122,23 +141,20 @@ def test_load_cargo_metadata_error_scenarios(
     cmd_mox: CmdMox,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    exit_code: int,
-    stdout: str,
-    stderr: str,
-    expected_message: str,
+    scenario: ErrorScenario,
 ) -> None:
     """Error cases should raise :class:`CargoMetadataError` with detail."""
     install_cargo_stub(cmd_mox, monkeypatch)
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+        exit_code=scenario.exit_code,
+        stdout=scenario.stdout,
+        stderr=scenario.stderr,
     )
 
     with pytest.raises(CargoMetadataError) as excinfo:
         load_cargo_metadata(tmp_path)
 
-    assert expected_message in str(excinfo.value)
+    assert scenario.expected_message in str(excinfo.value)
 
 
 def test_ensure_command_raises_on_missing_executable(
