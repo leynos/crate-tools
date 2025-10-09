@@ -162,11 +162,16 @@ def test_ensure_command_raises_on_missing_executable(
 ) -> None:
     """Verify ``CommandNotFound`` is surfaced as ``CargoExecutableNotFoundError``."""
 
-    class _MissingCargo:
-        def __getitem__(self, name: str) -> typ.NoReturn:
-            raise metadata_module.CommandNotFound(name, ["/usr/bin"])
+    def _raise_command_not_found(
+        _self: typ.Any, name: str
+    ) -> typ.NoReturn:
+        raise metadata_module.CommandNotFound(name, ["/usr/bin"])
 
-    monkeypatch.setattr(metadata_module, "local", _MissingCargo())
+    monkeypatch.setattr(
+        metadata_module.local.__class__,
+        "__getitem__",
+        _raise_command_not_found,
+    )
 
     with pytest.raises(CargoExecutableNotFoundError):
         metadata_module._ensure_command()
