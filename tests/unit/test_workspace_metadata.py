@@ -86,7 +86,7 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
     assert "manifest missing" in str(excinfo.value)
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class ErrorScenario:
     """Test scenario for cargo metadata error cases."""
 
