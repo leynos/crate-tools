@@ -37,6 +37,23 @@ def test_load_cargo_metadata_parses_output(
     assert result == payload
 
 
+def test_load_cargo_metadata_decodes_byte_output(
+    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The wrapper should transparently decode byte streams."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+    payload = {"workspace_root": "./", "packages": []}
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload).encode("utf-8"),
+        stderr=b"",
+    )
+
+    result = load_cargo_metadata(tmp_path)
+
+    assert result == payload
+
+
 def test_load_cargo_metadata_missing_executable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -49,6 +66,23 @@ def test_load_cargo_metadata_missing_executable(
 
     with pytest.raises(CargoExecutableNotFoundError):
         load_cargo_metadata(tmp_path)
+
+
+def test_load_cargo_metadata_error_decodes_byte_streams(
+    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Failure messages should be decoded when provided as bytes."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=101,
+        stdout=b"",
+        stderr=b"manifest missing",
+    )
+
+    with pytest.raises(CargoMetadataError) as excinfo:
+        load_cargo_metadata(tmp_path)
+
+    assert "manifest missing" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
