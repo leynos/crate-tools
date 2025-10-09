@@ -17,6 +17,9 @@ def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None
     from lading.workspace import metadata as metadata_module
 
     class _StubCommand:
+        # Stub command ignores ``cwd`` and ``retcode`` to keep behaviour tightly
+        # controlled by cmd-mox responses without coupling tests to plumbum
+        # internals.
         def run(
             self,
             *,
