@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import json
-from dataclasses import dataclass
 import typing as typ
 
 import pytest
@@ -86,7 +86,7 @@ def test_load_cargo_metadata_error_decodes_byte_streams(
     assert "manifest missing" in str(excinfo.value)
 
 
-@dataclass(frozen=True)
+@dc.dataclass(frozen=True)
 class ErrorScenario:
     """Test scenario for cargo metadata error cases."""
 
@@ -162,16 +162,11 @@ def test_ensure_command_raises_on_missing_executable(
 ) -> None:
     """Verify ``CommandNotFound`` is surfaced as ``CargoExecutableNotFoundError``."""
 
-    def _raise_command_not_found(
-        _self: typ.Any, name: str
-    ) -> typ.NoReturn:
-        raise metadata_module.CommandNotFound(name, ["/usr/bin"])
+    class _RaisingLocal:
+        def __getitem__(self, name: str) -> typ.NoReturn:
+            raise metadata_module.CommandNotFound(name, ["/usr/bin"])
 
-    monkeypatch.setattr(
-        metadata_module.local.__class__,
-        "__getitem__",
-        _raise_command_not_found,
-    )
+    monkeypatch.setattr(metadata_module, "local", _RaisingLocal())
 
     with pytest.raises(CargoExecutableNotFoundError):
         metadata_module._ensure_command()
