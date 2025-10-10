@@ -5,6 +5,16 @@ description = "crate-tools package"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "ISC" }
+classifiers = [
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: ISC License (ISCL)",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+]
+keywords = ["rust", "cargo", "workspace", "release", "lading"]
+authors = [{ name = "Payton McIntosh", email = "pmcintosh@df12.net" }]
 dependencies = [
     "cyclopts>=2.9",
     "markdown-it-py>=3,<4",
@@ -67,6 +77,7 @@ select = [
     "RSE",
     "PERF",
     "TRY",
+    "EM",
     "D",
     "ANN",
 ]

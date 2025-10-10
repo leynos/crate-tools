@@ -22,7 +22,7 @@ class WorkspaceDependency(msgspec.Struct, frozen=True, kw_only=True):
 
     package_id: str
     name: str
-    kind: str | None = None
+    kind: typ.Literal["normal", "dev", "build"] | None = None
 
 
 class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
@@ -150,34 +150,55 @@ def _build_dependencies(
     )
     if raw_dependencies is None:
         return ()
-    dependencies: list[WorkspaceDependency] = []
-    for entry in raw_dependencies:
-        if not isinstance(entry, cabc.Mapping):
-            message = "dependency entries must be mappings"
-            raise WorkspaceModelError(message)
-        target_id = entry.get("package")
-        if not isinstance(target_id, str):
-            continue
-        if target_id not in workspace_member_ids:
-            continue
-        target_package = package_lookup.get(target_id)
-        if target_package is None:
-            continue
-        target_name = _expect_string(
-            target_package.get("name"), f"package {target_id!r} name"
+    return tuple(
+        dependency
+        for dependency in (
+            _as_workspace_dependency(entry, package_lookup, workspace_member_ids)
+            for entry in raw_dependencies
         )
-        kind = entry.get("kind")
-        if kind is not None and not isinstance(kind, str):
-            message = f"dependency kind must be string; received {type(kind).__name__}"
-            raise WorkspaceModelError(message)
-        dependencies.append(
-            WorkspaceDependency(
-                package_id=target_id,
-                name=target_name,
-                kind=kind,
-            )
+        if dependency is not None
+    )
+
+
+def _as_workspace_dependency(
+    entry: cabc.Mapping[str, typ.Any] | object,
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+    workspace_member_ids: set[str],
+) -> WorkspaceDependency | None:
+    """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
+    if not isinstance(entry, cabc.Mapping):
+        message = "dependency entries must be mappings"
+        raise WorkspaceModelError(message)
+    target_id = entry.get("package")
+    if not isinstance(target_id, str) or target_id not in workspace_member_ids:
+        return None
+    target_package = package_lookup.get(target_id)
+    if target_package is None:
+        return None
+    target_name = _expect_string(
+        target_package.get("name"), f"package {target_id!r} name"
+    )
+    kind_value = entry.get("kind")
+    if kind_value is None:
+        return WorkspaceDependency(
+            package_id=target_id,
+            name=target_name,
+            kind=None,
         )
-    return tuple(dependencies)
+    if not isinstance(kind_value, str):
+        message = (
+            f"dependency kind must be string; received {type(kind_value).__name__}"
+        )
+        raise WorkspaceModelError(message)
+    if kind_value not in {"normal", "dev", "build"}:
+        message = f"unsupported dependency kind {kind_value!r}"
+        raise WorkspaceModelError(message)
+    kind_literal = typ.cast("typ.Literal['normal', 'dev', 'build']", kind_value)
+    return WorkspaceDependency(
+        package_id=target_id,
+        name=target_name,
+        kind=kind_literal,
+    )
 
 
 def _normalise_workspace_root(value: object) -> Path:

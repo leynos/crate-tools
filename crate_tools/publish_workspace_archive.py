@@ -14,9 +14,9 @@ Example:
 
 from __future__ import annotations
 
-import typing as typ
 import tarfile
 import tempfile
+import typing as typ
 from pathlib import Path
 
 from plumbum import local
@@ -155,6 +155,8 @@ def _extract_members(
 ) -> None:
     """Extract ``safe_members`` into ``destination`` with version-aware safety."""
     for member in safe_members:
+        # Type stubs don't yet expose the ``filter`` parameter added in Python 3.12,
+        # so skip it when type checking to avoid false-positive failures.
         if typ.TYPE_CHECKING:
             tar.extract(member, destination)
         else:

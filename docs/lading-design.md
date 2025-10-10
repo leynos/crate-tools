@@ -285,7 +285,7 @@ registry.
 **Command Signature:**
 
 ```shell
-lading publish [--dry-run] [--allow-dirty]
+lading publish [--live] [--allow-dirty]
 ```
 
 - `--live`: By default, the command simulates the entire process, including
@@ -387,7 +387,10 @@ and performs releases.
 - **Unit Tests:** Each module (`config.py`, `workspace/metadata.py`,
   `workspace/models.py`, command helpers) will have comprehensive unit tests.
   Logic within the `bump` and `publish` commands will be unit-tested with
-  mocked filesystem and subprocess calls.
+  mocked filesystem and subprocess calls. Where behaviour is identical across
+  inputs (for example, ensuring metadata decoding handles both text and byte
+  streams) the suite will rely on parametrised tests to avoid duplication while
+  exercising each variant.
 - **Integration Tests:** The CLI itself (`cli.py`) will be tested using
   `cyclopts.testing.invoke`. These tests will run against mock workspaces
   defined in `tests/fixtures/` to verify command-line parsing, configuration

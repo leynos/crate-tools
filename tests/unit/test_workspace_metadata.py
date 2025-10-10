@@ -22,43 +22,50 @@ from lading.workspace import (
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
 
+_METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
+    "workspace_root": "./",
+    "packages": [],
+}
+
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
     from cmd_mox import CmdMox
 
 
-def test_load_cargo_metadata_parses_output(
-    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("stdout_data", "stderr_data"),
+    [
+        pytest.param(
+            json.dumps(_METADATA_PAYLOAD),
+            "",
+            id="text",
+        ),
+        pytest.param(
+            json.dumps(_METADATA_PAYLOAD).encode("utf-8"),
+            b"",
+            id="bytes",
+        ),
+    ],
+)
+def test_load_cargo_metadata_handles_stdout_variants(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    stdout_data: str | bytes,
+    stderr_data: str | bytes,
 ) -> None:
-    """Successful invocations should return parsed JSON payloads."""
+    """Successful invocations should return parsed JSON for text and byte streams."""
     install_cargo_stub(cmd_mox, monkeypatch)
-    payload = {"workspace_root": "./", "packages": []}
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
-        stdout=json.dumps(payload),
+        stdout=stdout_data,
+        stderr=stderr_data,
     )
 
     result = load_cargo_metadata(tmp_path)
 
-    assert result == payload
-
-
-def test_load_cargo_metadata_decodes_byte_output(
-    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The wrapper should transparently decode byte streams."""
-    install_cargo_stub(cmd_mox, monkeypatch)
-    payload = {"workspace_root": "./", "packages": []}
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload).encode("utf-8"),
-        stderr=b"",
-    )
-
-    result = load_cargo_metadata(tmp_path)
-
-    assert result == payload
+    assert result == _METADATA_PAYLOAD
 
 
 def test_load_cargo_metadata_missing_executable(
