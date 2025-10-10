@@ -3,8 +3,8 @@ name = "crate-tools"
 version = "0.1.0"
 description = "crate-tools package"
 readme = "README.md"
-requires-python = ">=3.10"
-license = { text = "MIT" }
+requires-python = ">=3.13"
+license = { text = "ISC" }
 dependencies = [
     "cyclopts>=2.9",
     "markdown-it-py>=3,<4",
