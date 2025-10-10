@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses as dc
+import tomllib
 import typing as typ
 
 import pytest
-import tomllib
 from tomlkit import parse
 from tomlkit.items import Array
 

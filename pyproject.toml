@@ -8,7 +8,7 @@ license = { text = "ISC" }
 dependencies = [
     "cyclopts>=2.9",
     "markdown-it-py>=3,<4",
-    "msgspec>=0.18",
+    "msgspec>=0.18,<1.0",
     "plumbum>=1.8",
     "tomlkit==0.13.*",
 ]

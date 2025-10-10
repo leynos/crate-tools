@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 import json
+import textwrap
 import typing as typ
 
 import pytest
@@ -183,25 +184,29 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     crate_manifest = workspace_root / "crate" / "Cargo.toml"
     crate_manifest.parent.mkdir(parents=True)
     crate_manifest.write_text(
-        """
-        [package]
-        name = "crate"
-        version = "0.1.0"
-        readme.workspace = true
+        textwrap.dedent(
+            """
+            [package]
+            name = "crate"
+            version = "0.1.0"
+            readme.workspace = true
 
-        [dependencies]
-        helper = { path = "../helper", version = "0.1.0" }
-        """
+            [dependencies]
+            helper = { path = "../helper", version = "0.1.0" }
+            """
+        ).strip()
     )
     helper_manifest = workspace_root / "helper" / "Cargo.toml"
     helper_manifest.parent.mkdir(parents=True)
     helper_manifest.write_text(
-        """
-        [package]
-        name = "helper"
-        version = "0.1.0"
-        readme = "README.md"
-        """
+        textwrap.dedent(
+            """
+            [package]
+            name = "helper"
+            version = "0.1.0"
+            readme = "README.md"
+            """
+        ).strip()
     )
     metadata = {
         "workspace_root": str(workspace_root),

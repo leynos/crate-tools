@@ -14,7 +14,7 @@ Example:
 
 from __future__ import annotations
 
-import sys
+import typing as typ
 import tarfile
 import tempfile
 from pathlib import Path
@@ -154,8 +154,8 @@ def _extract_members(
     tar: tarfile.TarFile, destination: Path, safe_members: list[tarfile.TarInfo]
 ) -> None:
     """Extract ``safe_members`` into ``destination`` with version-aware safety."""
-    extract_kwargs = {}
-    if sys.version_info >= (3, 12):
-        extract_kwargs["filter"] = "data"
     for member in safe_members:
-        tar.extract(member, destination, **extract_kwargs)
+        if typ.TYPE_CHECKING:
+            tar.extract(member, destination)
+        else:
+            tar.extract(member, destination, filter="data")

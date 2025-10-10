@@ -149,7 +149,10 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
 
 def _run_with_context(
     workspace_root: Path,
-    runner: typ.Callable[[Path, config.LadingConfig, WorkspaceGraph], str],
+    runner: typ.Callable[
+        [Path, config.LadingConfig | None, WorkspaceGraph | None],
+        str,
+    ],
 ) -> str:
     """Execute ``runner`` with configuration and workspace data."""
     try:

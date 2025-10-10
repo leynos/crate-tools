@@ -190,9 +190,11 @@ build scripts, and complex workspace configurations.
   uses `plumbum` to construct `cargo metadata --format-version 1`, normalising
   the workspace root via `lading.utils.normalise_workspace_root` before
   invoking the command.
-- Failures to locate the `cargo` executable, non-zero exit codes, or malformed
-  JSON payloads raise `CargoMetadataError`. This keeps command execution
-  details contained and provides a consistent error surface for higher layers.
+- Failures to locate the `cargo` executable raise
+  `CargoExecutableNotFoundError`; non-zero exit codes raise
+  `CargoMetadataInvocationError`; malformed JSON payloads raise
+  `CargoMetadataParseError`. Each derives from `CargoMetadataError`, giving
+  higher layers a single umbrella type while preserving detail for logging.
 - The wrapper returns the parsed JSON mapping directly. Later roadmap steps
   will build dedicated models on top of this structure without re-running the
   command or reparsing JSON.
@@ -352,11 +354,17 @@ lading/
 ├── cli.py          # Cyclopts app definition and command wiring
 ├── commands/
 │   ├── __init__.py
+│   ├── _shared.py  # Command-level helper utilities
 │   ├── bump.py     # Logic for the 'bump' subcommand
 │   └── publish.py  # Logic for the 'publish' subcommand
-├── config.py       # Pydantic models for lading.toml
-├── workspace.py    # Workspace discovery and graph model
-└── toml_utils.py   # Helpers for manipulating TOML files
+├── config.py       # Frozen dataclasses for lading.toml
+├── utils/
+│   ├── __init__.py
+│   └── path.py     # Filesystem helpers such as normalise_workspace_root
+└── workspace/
+    ├── __init__.py
+    ├── metadata.py  # cargo metadata invocation and parsing
+    └── models.py    # Workspace graph and manifest helpers
 tests/
 ├── conftest.py
 ├── fixtures/
@@ -376,9 +384,10 @@ clear architecture for future development.
 A robust testing strategy is essential for a tool that modifies source files
 and performs releases.
 
-- **Unit Tests:** Each module (`config.py`, `workspace.py`, `toml_utils.py`)
-  will have comprehensive unit tests. Logic within the `bump` and `publish`
-  commands will be unit-tested with mocked filesystem and subprocess calls.
+- **Unit Tests:** Each module (`config.py`, `workspace/metadata.py`,
+  `workspace/models.py`, command helpers) will have comprehensive unit tests.
+  Logic within the `bump` and `publish` commands will be unit-tested with
+  mocked filesystem and subprocess calls.
 - **Integration Tests:** The CLI itself (`cli.py`) will be tested using
   `cyclopts.testing.invoke`. These tests will run against mock workspaces
   defined in `tests/fixtures/` to verify command-line parsing, configuration

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import typing as typ
 from collections import abc as cabc
-from functools import cached_property
 from pathlib import Path
 
 import msgspec
@@ -45,7 +44,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
     workspace_root: Path
     crates: tuple[WorkspaceCrate, ...]
 
-    @cached_property
+    @property
     def crates_by_name(self) -> dict[str, WorkspaceCrate]:
         """Return a name-indexed mapping of workspace crates."""
         return {crate.name: crate for crate in self.crates}
@@ -188,7 +187,7 @@ def _normalise_workspace_root(value: object) -> Path:
             f"workspace_root must be a path string; received {type(value).__name__}"
         )
         raise WorkspaceModelError(message)
-    from lading.utils import normalise_workspace_root
+    from lading.utils.path import normalise_workspace_root
 
     return normalise_workspace_root(value)
 

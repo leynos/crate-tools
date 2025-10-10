@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing as typ
 
 from lading import config as config_module
+from lading.commands._shared import describe_crates
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -35,15 +36,8 @@ def run(
         workspace = load_workspace(root_path)
     doc_files = configuration.bump.doc_files
     doc_files_summary = ", ".join(doc_files) if doc_files else "none"
-    crate_summary = _describe_crates(workspace)
+    crate_summary = describe_crates(workspace)
     return (
         "bump placeholder invoked for "
         f"{root_path} (crates: {crate_summary}, doc files: {doc_files_summary})"
     )
-
-
-def _describe_crates(workspace: WorkspaceGraph) -> str:
-    """Return a human-friendly crate count summary."""
-    count = len(workspace.crates)
-    label = "crate" if count == 1 else "crates"
-    return f"{count} {label}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 import typing as typ
 
 from pytest_bdd import given, scenarios, then, when
@@ -66,13 +67,15 @@ def given_workspace_manifest(workspace_directory: Path) -> Path:
     crate_dir.mkdir()
     manifest = crate_dir / "Cargo.toml"
     manifest.write_text(
-        """
-        [package]
-        name = "alpha"
-        version = "0.1.0"
-        readme.workspace = true
-        publish = ["crates-io"]
-        """
+        textwrap.dedent(
+            """
+            [package]
+            name = "alpha"
+            version = "0.1.0"
+            readme.workspace = true
+            publish = ["crates-io"]
+            """
+        ).strip()
     )
     return manifest
 

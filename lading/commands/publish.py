@@ -5,6 +5,7 @@ from __future__ import annotations
 import typing as typ
 
 from lading import config as config_module
+from lading.commands._shared import describe_crates
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
@@ -28,15 +29,8 @@ def run(
 
         workspace = load_workspace(root_path)
     strip_patches = configuration.publish.strip_patches
-    crate_summary = _describe_crates(workspace)
+    crate_summary = describe_crates(workspace)
     return (
         "publish placeholder invoked for "
         f"{root_path} (crates: {crate_summary}, strip patches: {strip_patches})"
     )
-
-
-def _describe_crates(workspace: WorkspaceGraph) -> str:
-    """Return a human-friendly crate count summary."""
-    count = len(workspace.crates)
-    label = "crate" if count == 1 else "crates"
-    return f"{count} {label}"
