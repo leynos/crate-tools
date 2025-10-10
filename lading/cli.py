@@ -12,6 +12,7 @@ from cyclopts import App, Parameter
 
 from . import commands, config
 from .utils import normalise_workspace_root
+from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
 
 WORKSPACE_ROOT_ENV_VAR = "LADING_WORKSPACE_ROOT"
 WORKSPACE_ROOT_REQUIRED_MESSAGE = "--workspace-root requires a value"
@@ -131,7 +132,11 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
                 _workspace_env(workspace_root),
                 config.use_configuration(configuration),
             ):
-                return _dispatch_and_print(remaining)
+                try:
+                    return _dispatch_and_print(remaining)
+                except WorkspaceModelError as exc:
+                    print(f"Workspace error: {exc}", file=sys.stderr)
+                    return 1
         finally:
             app.config = previous_config
     except KeyboardInterrupt:
@@ -142,18 +147,23 @@ def main(argv: typ.Sequence[str] | None = None) -> int:
         return 1
 
 
-def _run_with_configuration(
+def _run_with_context(
     workspace_root: Path,
-    runner: typ.Callable[[Path, config.LadingConfig], str],
+    runner: typ.Callable[
+        [Path, config.LadingConfig | None, WorkspaceGraph | None],
+        str,
+    ],
 ) -> str:
-    """Execute ``runner`` with a configuration, loading it on demand."""
+    """Execute ``runner`` with configuration and workspace data."""
     try:
         configuration = config.current_configuration()
     except config.ConfigurationNotLoadedError:
         configuration = config.load_configuration(workspace_root)
+        workspace_model = load_workspace(workspace_root)
         with config.use_configuration(configuration):
-            return runner(workspace_root, configuration)
-    return runner(workspace_root, configuration)
+            return runner(workspace_root, configuration, workspace_model)
+    workspace_model = load_workspace(workspace_root)
+    return runner(workspace_root, configuration, workspace_model)
 
 
 @app.command
@@ -162,7 +172,7 @@ def bump(
 ) -> str:
     """Return placeholder acknowledgement for the ``bump`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    return _run_with_configuration(resolved, commands.bump.run)
+    return _run_with_context(resolved, commands.bump.run)
 
 
 @app.command
@@ -171,7 +181,7 @@ def publish(
 ) -> str:
     """Return placeholder acknowledgement for the ``publish`` subcommand."""
     resolved = normalise_workspace_root(workspace_root)
-    return _run_with_configuration(resolved, commands.publish.run)
+    return _run_with_context(resolved, commands.publish.run)
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point

@@ -66,9 +66,10 @@ present.
 ### `bump`
 
 The `bump` command currently emits a placeholder acknowledgement confirming the
-selected workspace and summarising the documentation files listed in the
-configuration. Future roadmap items will replace this with the version
-propagation workflow described in the design document.
+selected workspace, summarising the documentation files listed in the
+configuration, and reporting how many crates were discovered. Future roadmap
+items will replace this with the version propagation workflow described in the
+design document.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path bump
@@ -77,8 +78,9 @@ python -m lading.cli --workspace-root /workspace/path bump
 ### `publish`
 
 `publish` is scaffolded in the same fashion. It acknowledges the workspace,
-reports the configured `strip_patches` strategy, and returns successfully.
-Publication planning and execution will arrive in later phases of the roadmap.
+reports the configured `strip_patches` strategy, includes the discovered crate
+count, and returns successfully. Publication planning and execution will arrive
+in later phases of the roadmap.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish
@@ -86,17 +88,18 @@ python -m lading.cli --workspace-root /workspace/path publish
 
 ## Testing hooks
 
-Behavioural tests invoke the CLI as an external process and spy on the
-`python` executable with [`cmd-mox`](./cmd-mox-usage-guide.md). This pattern
-keeps the tests faithful to real user interactions while still providing strict
-control over command invocations. Use the same approach when adding new
-end-to-end scenarios.
+Behavioural tests invoke the CLI as an external process and spy on the `python`
+executable with [`cmd-mox`](./cmd-mox-usage-guide.md). This pattern keeps the
+tests faithful to real user interactions while still providing strict control
+over command invocations. Use the same approach when adding new end-to-end
+scenarios.
 
 ## Workspace discovery helpers
-Roadmap Step 1.2 introduces a thin wrapper around `cargo metadata` to
-expose workspace information to both commands and library consumers.
-Import `lading.workspace.load_cargo_metadata` to execute the command
-with the current or explicitly provided workspace root:
+
+Roadmap Step 1.2 introduces a thin wrapper around `cargo metadata` to expose
+workspace information to both commands and library consumers. Import
+`lading.workspace.load_cargo_metadata` to execute the command with the current
+or explicitly provided workspace root:
 
 ```python
 from pathlib import Path
@@ -107,7 +110,29 @@ metadata = load_cargo_metadata(Path("/path/to/workspace"))
 print(metadata["workspace_root"])
 ```
 
-The helper normalises the workspace path, invokes `cargo metadata --
-format-version 1` using `plumbum`, and returns the parsed JSON mapping.
-Any execution errors or invalid output raise `CargoMetadataError` with a
-descriptive message so callers can present actionable feedback to users.
+The helper normalises the workspace path, invokes
+`cargo metadata -- format-version 1` using `plumbum`, and returns the parsed
+JSON mapping. Any execution errors or invalid output raise `CargoMetadataError`
+with a descriptive message so callers can present actionable feedback to users.
+
+### Workspace graph model
+
+`load_workspace` converts the raw metadata into a strongly typed
+`WorkspaceGraph` model backed by `msgspec.Struct` definitions. The graph lists
+each crate, its manifest path, publication status, and any dependencies on
+other workspace members. The message returned by the CLI mirrors this
+information so that users can confirm discovery succeeded before later roadmap
+features begin mutating manifests.
+
+```python
+from pathlib import Path
+
+from lading.workspace import load_workspace
+
+workspace = load_workspace(Path("/path/to/workspace"))
+print([crate.name for crate in workspace.crates])
+```
+
+The builder reads each crate manifest with `tomlkit` to detect
+`readme.workspace = true` directives while preserving document structure for
+future round-tripping.

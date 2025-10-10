@@ -13,6 +13,7 @@ from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
 from lading.utils import normalise_workspace_root
+from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -91,6 +92,22 @@ def test_normalise_workspace_root_defaults_to_cwd(
     assert resolved == tmp_path.resolve()
 
 
+def _make_workspace(root: Path) -> WorkspaceGraph:
+    """Return a representative workspace graph for CLI tests."""
+    crate_root = root / "crate"
+    crate = WorkspaceCrate(
+        id="crate-id",
+        name="crate",
+        version="0.1.0",
+        manifest_path=crate_root / "Cargo.toml",
+        root_path=crate_root,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+    return WorkspaceGraph(workspace_root=root, crates=(crate,))
+
+
 @pytest.mark.usefixtures("minimal_config")
 @pytest.mark.parametrize(
     "case",
@@ -118,14 +135,20 @@ def test_main_dispatches_command(
     """Route subcommands through their placeholder implementations."""
     called: dict[str, typ.Any] = {}
 
+    workspace_graph = _make_workspace(tmp_path.resolve())
+
     def fake_run(
-        workspace_root: Path, configuration: config_module.LadingConfig
+        workspace_root: Path,
+        configuration: config_module.LadingConfig,
+        workspace_model: WorkspaceGraph,
     ) -> str:
         called["workspace_root"] = workspace_root
         called["configuration"] = configuration
+        called["workspace"] = workspace_model
         return case.placeholder_text
 
     monkeypatch.setattr(case.command_module, "run", fake_run)
+    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
     args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in case.cli_args]
     assert case.command_name in args
     exit_code = cli.main(args)
@@ -136,6 +159,7 @@ def test_main_dispatches_command(
         assert configuration.bump.doc_files == ("README.md",)
     else:
         assert configuration.publish.strip_patches == "all"
+    assert called["workspace"] is workspace_graph
     captured = capsys.readouterr()
     assert case.placeholder_text in captured.out
 
@@ -213,11 +237,16 @@ def test_main_handles_exceptions(
 
 
 @pytest.mark.usefixtures("minimal_config")
-def test_cyclopts_invoke_uses_workspace_env(tmp_path: Path) -> None:
+def test_cyclopts_invoke_uses_workspace_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Invoke the Cyclopts app directly with workspace override propagation."""
+    graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
     result = cli.app(["bump", "--workspace-root", str(tmp_path)])
     assert result == (
-        f"bump placeholder invoked for {tmp_path.resolve()} (doc files: README.md)"
+        "bump placeholder invoked for "
+        f"{tmp_path.resolve()} (crates: 1 crate, doc files: README.md)"
     )
 
 

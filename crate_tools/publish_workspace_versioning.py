@@ -6,9 +6,8 @@ contextual diagnostics when required keys are missing.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import tomllib
+from pathlib import Path
 
 __all__ = [
     "_extract_section_lines",
