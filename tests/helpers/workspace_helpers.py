@@ -13,17 +13,16 @@ if typ.TYPE_CHECKING:
 
 
 def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace ``_ensure_command`` with a shim using :mod:`cmd_mox`."""
+    """Activate cmd-mox shims for both in-process and subprocess tests."""
     from lading.workspace import metadata as metadata_module
 
     class _StubCommand:
-        # Stub command ignores ``cwd`` and ``retcode`` to keep behaviour tightly
-        # controlled by cmd-mox responses without coupling tests to plumbum
-        # internals.
+        """Use cmd-mox expectations without invoking an external process."""
+
         def run(
             self,
             *,
-            retcode: int | None = None,
+            retcode: int | tuple[int, ...] | None = None,
             cwd: str | os.PathLike[str] | None = None,
         ) -> tuple[int, str, str]:
             invocation = Invocation(
@@ -36,3 +35,4 @@ def install_cargo_stub(cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch) -> None
             return response.exit_code, response.stdout, response.stderr
 
     monkeypatch.setattr(metadata_module, "_ensure_command", lambda: _StubCommand())
+    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")

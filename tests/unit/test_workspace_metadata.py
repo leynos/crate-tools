@@ -11,7 +11,12 @@ import pytest
 from lading.workspace import (
     CargoExecutableNotFoundError,
     CargoMetadataError,
+    WorkspaceDependency,
+    WorkspaceGraph,
+    WorkspaceModelError,
+    build_workspace_graph,
     load_cargo_metadata,
+    load_workspace,
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
@@ -170,3 +175,122 @@ def test_ensure_command_raises_on_missing_executable(
 
     with pytest.raises(CargoExecutableNotFoundError):
         metadata_module._ensure_command()
+
+
+def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
+    """Convert metadata payloads into strongly typed workspace models."""
+    workspace_root = tmp_path
+    crate_manifest = workspace_root / "crate" / "Cargo.toml"
+    crate_manifest.parent.mkdir(parents=True)
+    crate_manifest.write_text(
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+        readme.workspace = true
+
+        [dependencies]
+        helper = { path = "../helper", version = "0.1.0" }
+        """
+    )
+    helper_manifest = workspace_root / "helper" / "Cargo.toml"
+    helper_manifest.parent.mkdir(parents=True)
+    helper_manifest.write_text(
+        """
+        [package]
+        name = "helper"
+        version = "0.1.0"
+        readme = "README.md"
+        """
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            {
+                "name": "crate",
+                "version": "0.1.0",
+                "id": "crate-id",
+                "manifest_path": str(crate_manifest),
+                "dependencies": [
+                    {"name": "helper", "package": "helper-id", "kind": "dev"},
+                    {"name": "external", "package": "external-id"},
+                ],
+                "publish": [],
+            },
+            {
+                "name": "helper",
+                "version": "0.1.0",
+                "id": "helper-id",
+                "manifest_path": str(helper_manifest),
+                "dependencies": [],
+                "publish": None,
+            },
+        ],
+        "workspace_members": ["crate-id", "helper-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert isinstance(graph, WorkspaceGraph)
+    assert graph.workspace_root == workspace_root.resolve()
+    names = [crate.name for crate in graph.crates]
+    assert names == ["crate", "helper"]
+    crate = graph.crates[0]
+    assert crate.publish is False
+    assert crate.readme_is_workspace is True
+    assert crate.dependencies == (
+        WorkspaceDependency(package_id="helper-id", name="helper", kind="dev"),
+    )
+    helper = graph.crates[1]
+    assert helper.publish is True
+    assert helper.readme_is_workspace is False
+
+
+def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
+    """Missing package entries should surface as ``WorkspaceModelError``."""
+    metadata = {
+        "workspace_root": str(tmp_path),
+        "packages": [],
+        "workspace_members": ["crate-id"],
+    }
+
+    with pytest.raises(WorkspaceModelError):
+        build_workspace_graph(metadata)
+
+
+def test_load_workspace_invokes_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ensure ``load_workspace`` converts metadata into a graph."""
+    crate_manifest = tmp_path / "crate" / "Cargo.toml"
+    crate_manifest.parent.mkdir(parents=True)
+    crate_manifest.write_text(
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+        readme.workspace = true
+        """
+    )
+    metadata = {
+        "workspace_root": str(tmp_path),
+        "packages": [
+            {
+                "name": "crate",
+                "version": "0.1.0",
+                "id": "crate-id",
+                "manifest_path": str(crate_manifest),
+                "dependencies": [],
+                "publish": None,
+            }
+        ],
+        "workspace_members": ["crate-id"],
+    }
+
+    monkeypatch.setattr(metadata_module, "load_cargo_metadata", lambda *_: metadata)
+
+    graph = load_workspace(tmp_path)
+
+    assert isinstance(graph, WorkspaceGraph)
+    assert graph.crates[0].name == "crate"
