@@ -254,6 +254,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     helper = crates["helper"]
     assert helper.publish is True
     assert helper.readme_is_workspace is False
+    assert helper.dependencies == ()
 
 
 def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
@@ -264,7 +265,10 @@ def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
         "workspace_members": ["crate-id"],
     }
 
-    with pytest.raises(WorkspaceModelError):
+    with pytest.raises(
+        WorkspaceModelError,
+        match=r"workspace member 'crate-id' missing from package list",
+    ):
         build_workspace_graph(metadata)
 
 
@@ -300,7 +304,14 @@ def test_load_workspace_invokes_metadata(
         "workspace_members": ["crate-id"],
     }
 
-    monkeypatch.setattr(metadata_module, "load_cargo_metadata", lambda *_: metadata)
+    def _fake_load_cargo_metadata(
+        workspace_root: Path | str | None = None,
+    ) -> dict[str, typ.Any]:
+        return metadata
+
+    monkeypatch.setattr(
+        metadata_module, "load_cargo_metadata", _fake_load_cargo_metadata
+    )
 
     graph = load_workspace(tmp_path)
 
