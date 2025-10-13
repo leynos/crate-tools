@@ -160,15 +160,22 @@ def _build_dependencies(
     )
 
 
-def _as_workspace_dependency(
+def _validate_dependency_mapping(
     entry: cabc.Mapping[str, typ.Any] | object,
-    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
-    workspace_member_ids: set[str],
-) -> WorkspaceDependency | None:
-    """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
+) -> cabc.Mapping[str, typ.Any]:
+    """Return ``entry`` as a mapping or raise if it is not."""
     if not isinstance(entry, cabc.Mapping):
         message = "dependency entries must be mappings"
         raise WorkspaceModelError(message)
+    return entry
+
+
+def _lookup_workspace_target(
+    entry: cabc.Mapping[str, typ.Any],
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+    workspace_member_ids: set[str],
+) -> tuple[str, str] | None:
+    """Return the dependency target id and name when in the workspace."""
     target_id = entry.get("package")
     if not isinstance(target_id, str) or target_id not in workspace_member_ids:
         return None
@@ -178,13 +185,16 @@ def _as_workspace_dependency(
     target_name = _expect_string(
         target_package.get("name"), f"package {target_id!r} name"
     )
+    return target_id, target_name
+
+
+def _validate_dependency_kind(
+    entry: cabc.Mapping[str, typ.Any],
+) -> typ.Literal["normal", "dev", "build"] | None:
+    """Return a validated dependency kind literal when present."""
     kind_value = entry.get("kind")
     if kind_value is None:
-        return WorkspaceDependency(
-            package_id=target_id,
-            name=target_name,
-            kind=None,
-        )
+        return None
     if not isinstance(kind_value, str):
         message = (
             f"dependency kind must be string; received {type(kind_value).__name__}"
@@ -193,7 +203,21 @@ def _as_workspace_dependency(
     if kind_value not in {"normal", "dev", "build"}:
         message = f"unsupported dependency kind {kind_value!r}"
         raise WorkspaceModelError(message)
-    kind_literal = typ.cast("typ.Literal['normal', 'dev', 'build']", kind_value)
+    return typ.cast("typ.Literal['normal', 'dev', 'build']", kind_value)
+
+
+def _as_workspace_dependency(
+    entry: cabc.Mapping[str, typ.Any] | object,
+    package_lookup: cabc.Mapping[str, cabc.Mapping[str, typ.Any]],
+    workspace_member_ids: set[str],
+) -> WorkspaceDependency | None:
+    """Convert ``entry`` into a :class:`WorkspaceDependency` when possible."""
+    dependency = _validate_dependency_mapping(entry)
+    target = _lookup_workspace_target(dependency, package_lookup, workspace_member_ids)
+    if target is None:
+        return None
+    target_id, target_name = target
+    kind_literal = _validate_dependency_kind(dependency)
     return WorkspaceDependency(
         package_id=target_id,
         name=target_name,
