@@ -34,16 +34,14 @@ if typ.TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("stdout_data", "stderr_data"),
+    "output_data",
     [
         pytest.param(
-            json.dumps(_METADATA_PAYLOAD),
-            "",
+            (json.dumps(_METADATA_PAYLOAD), ""),
             id="text",
         ),
         pytest.param(
-            json.dumps(_METADATA_PAYLOAD).encode("utf-8"),
-            b"",
+            (json.dumps(_METADATA_PAYLOAD).encode("utf-8"), b""),
             id="bytes",
         ),
     ],
@@ -52,11 +50,11 @@ def test_load_cargo_metadata_handles_stdout_variants(
     cmd_mox: CmdMox,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    stdout_data: str | bytes,
-    stderr_data: str | bytes,
+    output_data: tuple[str | bytes, str | bytes],
 ) -> None:
     """Successful invocations should return parsed JSON for text and byte streams."""
     install_cargo_stub(cmd_mox, monkeypatch)
+    stdout_data, stderr_data = output_data
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=stdout_data,
