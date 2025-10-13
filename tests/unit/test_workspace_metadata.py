@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses as dc
 import json
+import textwrap
 import typing as typ
 
 import pytest
@@ -11,10 +12,20 @@ import pytest
 from lading.workspace import (
     CargoExecutableNotFoundError,
     CargoMetadataError,
+    WorkspaceDependency,
+    WorkspaceGraph,
+    WorkspaceModelError,
+    build_workspace_graph,
     load_cargo_metadata,
+    load_workspace,
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
+
+_METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
+    "workspace_root": "./",
+    "packages": [],
+}
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -22,37 +33,37 @@ if typ.TYPE_CHECKING:
     from cmd_mox import CmdMox
 
 
-def test_load_cargo_metadata_parses_output(
-    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    "output_data",
+    [
+        pytest.param(
+            (json.dumps(_METADATA_PAYLOAD), ""),
+            id="text",
+        ),
+        pytest.param(
+            (json.dumps(_METADATA_PAYLOAD).encode("utf-8"), b""),
+            id="bytes",
+        ),
+    ],
+)
+def test_load_cargo_metadata_handles_stdout_variants(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    output_data: tuple[str | bytes, str | bytes],
 ) -> None:
-    """Successful invocations should return parsed JSON payloads."""
+    """Successful invocations should return parsed JSON for text and byte streams."""
     install_cargo_stub(cmd_mox, monkeypatch)
-    payload = {"workspace_root": "./", "packages": []}
+    stdout_data, stderr_data = output_data
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
-        stdout=json.dumps(payload),
+        stdout=stdout_data,
+        stderr=stderr_data,
     )
 
     result = load_cargo_metadata(tmp_path)
 
-    assert result == payload
-
-
-def test_load_cargo_metadata_decodes_byte_output(
-    cmd_mox: CmdMox, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """The wrapper should transparently decode byte streams."""
-    install_cargo_stub(cmd_mox, monkeypatch)
-    payload = {"workspace_root": "./", "packages": []}
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload).encode("utf-8"),
-        stderr=b"",
-    )
-
-    result = load_cargo_metadata(tmp_path)
-
-    assert result == payload
+    assert result == _METADATA_PAYLOAD
 
 
 def test_load_cargo_metadata_missing_executable(
@@ -170,3 +181,139 @@ def test_ensure_command_raises_on_missing_executable(
 
     with pytest.raises(CargoExecutableNotFoundError):
         metadata_module._ensure_command()
+
+
+def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
+    """Convert metadata payloads into strongly typed workspace models."""
+    workspace_root = tmp_path
+    crate_manifest = workspace_root / "crate" / "Cargo.toml"
+    crate_manifest.parent.mkdir(parents=True)
+    crate_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "crate"
+            version = "0.1.0"
+            readme.workspace = true
+
+            [dependencies]
+            helper = { path = "../helper", version = "0.1.0" }
+            """
+        ).strip()
+    )
+    helper_manifest = workspace_root / "helper" / "Cargo.toml"
+    helper_manifest.parent.mkdir(parents=True)
+    helper_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "helper"
+            version = "0.1.0"
+            readme = "README.md"
+            """
+        ).strip()
+    )
+    metadata = {
+        "workspace_root": str(workspace_root),
+        "packages": [
+            {
+                "name": "crate",
+                "version": "0.1.0",
+                "id": "crate-id",
+                "manifest_path": str(crate_manifest),
+                "dependencies": [
+                    {"name": "helper", "package": "helper-id", "kind": "dev"},
+                    {"name": "external", "package": "external-id"},
+                ],
+                "publish": [],
+            },
+            {
+                "name": "helper",
+                "version": "0.1.0",
+                "id": "helper-id",
+                "manifest_path": str(helper_manifest),
+                "dependencies": [],
+                "publish": None,
+            },
+        ],
+        "workspace_members": ["crate-id", "helper-id"],
+    }
+
+    graph = build_workspace_graph(metadata)
+
+    assert isinstance(graph, WorkspaceGraph)
+    assert graph.workspace_root == workspace_root.resolve()
+    crates = graph.crates_by_name
+    assert set(crates) == {"crate", "helper"}
+    crate = crates["crate"]
+    assert crate.publish is False
+    assert crate.readme_is_workspace is True
+    assert crate.dependencies == (
+        WorkspaceDependency(package_id="helper-id", name="helper", kind="dev"),
+    )
+    helper = crates["helper"]
+    assert helper.publish is True
+    assert helper.readme_is_workspace is False
+    assert helper.dependencies == ()
+
+
+def test_build_workspace_graph_rejects_missing_members(tmp_path: Path) -> None:
+    """Missing package entries should surface as ``WorkspaceModelError``."""
+    metadata = {
+        "workspace_root": str(tmp_path),
+        "packages": [],
+        "workspace_members": ["crate-id"],
+    }
+
+    with pytest.raises(
+        WorkspaceModelError,
+        match=r"workspace member 'crate-id' missing from package list",
+    ):
+        build_workspace_graph(metadata)
+
+
+def test_load_workspace_invokes_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ensure ``load_workspace`` converts metadata into a graph."""
+    crate_manifest = tmp_path / "crate" / "Cargo.toml"
+    crate_manifest.parent.mkdir(parents=True)
+    crate_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "crate"
+            version = "0.1.0"
+            readme.workspace = true
+            """
+        ).strip()
+    )
+    metadata = {
+        "workspace_root": str(tmp_path),
+        "packages": [
+            {
+                "name": "crate",
+                "version": "0.1.0",
+                "id": "crate-id",
+                "manifest_path": str(crate_manifest),
+                "dependencies": [],
+                "publish": None,
+            }
+        ],
+        "workspace_members": ["crate-id"],
+    }
+
+    def _fake_load_cargo_metadata(
+        workspace_root: Path | str | None = None,
+    ) -> dict[str, typ.Any]:
+        return metadata
+
+    monkeypatch.setattr(
+        metadata_module, "load_cargo_metadata", _fake_load_cargo_metadata
+    )
+
+    graph = load_workspace(tmp_path)
+
+    assert isinstance(graph, WorkspaceGraph)
+    assert graph.crates[0].name == "crate"

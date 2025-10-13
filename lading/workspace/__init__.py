@@ -7,9 +7,23 @@ from .metadata import (
     CargoMetadataError,
     load_cargo_metadata,
 )
+from .models import (
+    WorkspaceCrate,
+    WorkspaceDependency,
+    WorkspaceGraph,
+    WorkspaceModelError,
+    build_workspace_graph,
+    load_workspace,
+)
 
 __all__ = [
     "CargoExecutableNotFoundError",
     "CargoMetadataError",
+    "WorkspaceCrate",
+    "WorkspaceDependency",
+    "WorkspaceGraph",
+    "WorkspaceModelError",
+    "build_workspace_graph",
     "load_cargo_metadata",
+    "load_workspace",
 ]

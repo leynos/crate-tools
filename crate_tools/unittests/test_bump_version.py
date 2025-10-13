@@ -135,7 +135,8 @@ def test_warn_on_markdown_update_failure_logs_exception(
     """Log the exception with traceback when Markdown updates raise expected errors."""
 
     def raise_toml_error(path: Path, version: str) -> None:  # pragma: no cover - helper
-        raise TOMLKitError("boom")
+        message = "boom"
+        raise TOMLKitError(message)
 
     md_path = tmp_path / "README.md"
     md_path.write_text("content", encoding="utf-8")
