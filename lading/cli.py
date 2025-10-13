@@ -168,11 +168,20 @@ def _run_with_context(
 
 @app.command
 def bump(
+    version: str,
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
-    """Return placeholder acknowledgement for the ``bump`` subcommand."""
+    """Update workspace manifests to ``version``."""
     resolved = normalise_workspace_root(workspace_root)
-    return _run_with_context(resolved, commands.bump.run)
+    return _run_with_context(
+        resolved,
+        lambda root, configuration, workspace: commands.bump.run(
+            root,
+            version,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
 
 
 @app.command

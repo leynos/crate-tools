@@ -13,7 +13,8 @@ if typ.TYPE_CHECKING:
     import pytest
     from cmd_mox import CmdMox
 
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
+from tomlkit import parse as parse_toml
 
 from lading import config as config_module
 from tests.helpers.workspace_helpers import install_cargo_stub
@@ -51,6 +52,16 @@ def given_cargo_metadata_sample(
     crate_dir = workspace_directory / "crates" / "alpha"
     crate_dir.mkdir(parents=True)
     manifest_path = crate_dir / "Cargo.toml"
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    workspace_manifest.write_text(
+        """
+        [workspace]
+        members = ["crates/alpha"]
+
+        [workspace.package]
+        version = "0.1.0"
+        """
+    )
     manifest_path.write_text(
         """
         [package]
@@ -82,7 +93,7 @@ def given_cargo_metadata_sample(
 def _run_cli(
     repo_root: Path,
     workspace_directory: Path,
-    subcommand: str,
+    *command_args: str,
 ) -> dict[str, typ.Any]:
     command = [
         sys.executable,
@@ -90,8 +101,8 @@ def _run_cli(
         "lading.cli",
         "--workspace-root",
         str(workspace_directory),
-        subcommand,
     ]
+    command.extend(command_args)
     completed = subprocess.run(  # noqa: S603
         command,
         check=False,
@@ -107,13 +118,17 @@ def _run_cli(
     }
 
 
-@when("I invoke lading bump with that workspace", target_fixture="cli_run")
+@when(
+    parsers.parse("I invoke lading bump {version} with that workspace"),
+    target_fixture="cli_run",
+)
 def when_invoke_lading_bump(
+    version: str,
     workspace_directory: Path,
     repo_root: Path,
 ) -> dict[str, typ.Any]:
     """Execute the bump CLI via ``python -m`` and capture the result."""
-    return _run_cli(repo_root, workspace_directory, "bump")
+    return _run_cli(repo_root, workspace_directory, "bump", version)
 
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
@@ -125,14 +140,36 @@ def when_invoke_lading_publish(
     return _run_cli(repo_root, workspace_directory, "publish")
 
 
-@then("the command reports the workspace path, crate count, and doc files")
-def then_command_reports_workspace(cli_run: dict[str, typ.Any]) -> None:
-    """Assert that the placeholder message mentions the workspace."""
+@then(parsers.parse('the bump command reports manifest updates for "{version}"'))
+def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) -> None:
+    """Assert that the bump command reports the updated manifests."""
     assert cli_run["returncode"] == 0
-    workspace = cli_run["workspace"]
     stdout = cli_run["stdout"]
-    assert f"bump placeholder invoked for {workspace}" in stdout
-    assert "(crates: 1 crate, doc files: README.md)" in stdout
+    assert f"Updated version to {version}" in stdout
+
+
+@then(parsers.parse('the workspace manifest version is "{version}"'))
+def then_workspace_manifest_version(
+    cli_run: dict[str, typ.Any],
+    version: str,
+) -> None:
+    """Validate the workspace manifest was updated to ``version``."""
+    manifest_path = cli_run["workspace"] / "Cargo.toml"
+    document = parse_toml(manifest_path.read_text())
+    workspace_package = document["workspace"]["package"]
+    assert workspace_package["version"] == version
+
+
+@then(parsers.parse('the crate "{crate_name}" manifest version is "{version}"'))
+def then_crate_manifest_version(
+    cli_run: dict[str, typ.Any],
+    crate_name: str,
+    version: str,
+) -> None:
+    """Validate the crate manifest was updated to ``version``."""
+    manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
+    document = parse_toml(manifest_path.read_text())
+    assert document["package"]["version"] == version
 
 
 @then("the publish command reports the workspace path, crate count, and strip patches")

@@ -1,32 +1,37 @@
-"""Placeholder implementation for the ``lading bump`` command."""
+"""Version bumping command implementation."""
 
 from __future__ import annotations
 
 import typing as typ
 
+from tomlkit import parse as parse_toml
+from tomlkit.items import Table
+
 from lading import config as config_module
-from lading.commands._shared import describe_crates
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from tomlkit.toml_document import TOMLDocument
+
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceGraph
 
+_WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
+    ("package",),
+    ("workspace", "package"),
+)
+
 
 def run(
-    workspace_root: Path,
+    workspace_root: Path | str,
+    target_version: str,
+    *,
     configuration: LadingConfig | None = None,
     workspace: WorkspaceGraph | None = None,
 ) -> str:
-    """Return a placeholder message for the bump command.
-
-    Step 1.1 only wires the CLI, so we provide a friendly acknowledgement
-    instead of mutating manifests. The message makes it trivial for tests
-    to assert that dispatch occurred correctly without constraining future
-    behaviour.
-    """
+    """Update workspace and crate manifest versions to ``target_version``."""
     root_path = normalise_workspace_root(workspace_root)
     if configuration is None:
         configuration = config_module.current_configuration()
@@ -34,10 +39,78 @@ def run(
         from lading.workspace import load_workspace
 
         workspace = load_workspace(root_path)
-    doc_files = configuration.bump.doc_files
-    doc_files_summary = ", ".join(doc_files) if doc_files else "none"
-    crate_summary = describe_crates(workspace)
-    return (
-        "bump placeholder invoked for "
-        f"{root_path} (crates: {crate_summary}, doc files: {doc_files_summary})"
-    )
+
+    changed = 0
+    workspace_manifest = root_path / "Cargo.toml"
+    if _update_manifest(workspace_manifest, _WORKSPACE_SELECTORS, target_version):
+        changed += 1
+
+    excluded = set(configuration.bump.exclude)
+    for crate in workspace.crates:
+        if crate.name in excluded:
+            continue
+        if _update_manifest(crate.manifest_path, (("package",),), target_version):
+            changed += 1
+
+    if changed == 0:
+        return f"No manifest changes required; all versions already {target_version}."
+    return f"Updated version to {target_version} in {changed} manifest(s)."
+
+
+def _update_manifest(
+    manifest_path: Path,
+    selectors: tuple[tuple[str, ...], ...],
+    target_version: str,
+) -> bool:
+    """Apply ``target_version`` to each table described by ``selectors``."""
+    document = _parse_manifest(manifest_path)
+    changed = False
+    for selector in selectors:
+        table = _select_table(document, selector)
+        changed |= _assign_version(table, target_version)
+    if changed:
+        manifest_path.write_text(document.as_string())
+    return changed
+
+
+def _parse_manifest(manifest_path: Path) -> TOMLDocument:
+    """Load ``manifest_path`` into a :class:`tomlkit` document."""
+    content = manifest_path.read_text()
+    return parse_toml(content)
+
+
+def _select_table(
+    document: TOMLDocument | Table,
+    keys: tuple[str, ...],
+) -> Table | None:
+    """Return the nested table located by ``keys`` if it exists."""
+    current: object = document
+    for key in keys:
+        getter = getattr(current, "get", None)
+        if getter is None:
+            return None
+        next_value = getter(key)
+        if not isinstance(next_value, Table):
+            return None
+        current = next_value
+    return current if isinstance(current, Table) else None
+
+
+def _assign_version(table: Table | None, target_version: str) -> bool:
+    """Update ``table['version']`` when ``table`` is present."""
+    if table is None:
+        return False
+    current = table.get("version")
+    if _value_matches(current, target_version):
+        return False
+    table["version"] = target_version
+    return True
+
+
+def _value_matches(value: object, expected: str) -> bool:
+    """Return ``True`` when ``value`` already equals ``expected``."""
+    sentinel = object()
+    attribute = getattr(value, "value", sentinel)
+    if attribute is not sentinel:
+        return attribute == expected
+    return value == expected

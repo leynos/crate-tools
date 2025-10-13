@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, publish
+from lading.commands import publish
 from lading.utils import normalise_workspace_root
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
@@ -49,7 +49,7 @@ def _make_workspace(root: Path) -> WorkspaceGraph:
 
 @pytest.mark.parametrize(
     "command",
-    [bump.run, publish.run],
+    [publish.run],
 )
 def test_command_run_normalises_paths(
     command: typ.Callable[[Path, config_module.LadingConfig, WorkspaceGraph], str],
@@ -67,7 +67,7 @@ def test_command_run_normalises_paths(
 
 @pytest.mark.parametrize(
     "command",
-    [bump.run, publish.run],
+    [publish.run],
 )
 def test_command_run_fallbacks_to_current_configuration(
     command: typ.Callable[[Path], str],
@@ -84,16 +84,6 @@ def test_command_run_fallbacks_to_current_configuration(
     monkeypatch.setattr("lading.workspace.load_workspace", lambda root: graph)
     message = command(workspace)
     assert str(expected) in message
-
-
-def test_bump_run_mentions_command(tmp_path: Path) -> None:
-    """The bump placeholder response includes the command name."""
-    graph = _make_workspace(tmp_path.resolve())
-    message = bump.run(tmp_path, _make_config(), graph)
-    assert message == (
-        "bump placeholder invoked for "
-        f"{tmp_path.resolve()} (crates: 2 crates, doc files: README.md)"
-    )
 
 
 def test_publish_run_mentions_command(tmp_path: Path) -> None:

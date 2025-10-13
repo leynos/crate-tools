@@ -2,7 +2,7 @@
 
 The `lading` command-line tool orchestrates versioning and publication tasks
 for Rust workspaces. This guide documents the CLI scaffolding introduced in
-roadmap Step 1.1 and will expand as additional behaviour lands.
+roadmap Step 1.1 and the manifest version propagation delivered in Step 2.1.
 
 ## Installation and invocation
 
@@ -65,15 +65,24 @@ present.
 
 ### `bump`
 
-The `bump` command currently emits a placeholder acknowledgement confirming the
-selected workspace, summarising the documentation files listed in the
-configuration, and reporting how many crates were discovered. Future roadmap
-items will replace this with the version propagation workflow described in the
-design document.
+`bump` synchronises manifest versions across the workspace. The command
+requires the target version as a positional argument and touches the workspace
+`Cargo.toml` alongside every member crate unless the crate name appears in
+`bump.exclude` within `lading.toml`.
 
 ```bash
-python -m lading.cli --workspace-root /workspace/path bump
+python -m lading.cli --workspace-root /workspace/path bump 1.2.3
 ```
+
+Running the command updates:
+
+- `workspace.package.version` and any root `[package]` entry inside the main
+  `Cargo.toml`.
+- `package.version` for each workspace crate not listed in `bump.exclude`.
+
+`lading` prints a short summary such as
+`Updated version to 1.2.3 in 3 manifest(s).` so that release automation can
+assert the change without parsing files directly.
 
 ### `publish`
 

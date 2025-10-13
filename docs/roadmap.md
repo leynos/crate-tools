@@ -86,7 +86,7 @@ workspace and member crate manifests.
 
 **Tasks:**
 
-- [ ] **Update Workspace and Member Versions:**
+- [x] **Update Workspace and Member Versions:**
 
   - **Outcome:** The `bump` command can modify the `version` field in the main
     `Cargo.toml` and all member `Cargo.toml` files.

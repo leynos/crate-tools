@@ -277,6 +277,18 @@ lading bump <new_version> [--dry-run]
 6. **Report Changes:** Output a summary of all files that were (or would be)
    modified.
 
+### Implementation notes (Step 2.1)
+
+- Manifest rewrites use `tomlkit` so comments and formatting remain intact. The
+  implementation updates both `[package]` and `[workspace.package]` sections in
+  the workspace manifest when present.
+- `bump.exclude` is respected when iterating workspace crates. Any crate name
+  listed in the configuration keeps its existing `package.version` value during
+  the update pass.
+- The command reports a concise summary (`Updated version to … in N
+  manifest(s).`) so callers can assert success without inspecting the file
+  system.
+
 ## 4. `publish` Subcommand Design
 
 The `publish` command orchestrates the publication of crates to the designated
