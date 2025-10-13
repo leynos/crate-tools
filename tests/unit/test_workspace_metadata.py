@@ -243,15 +243,15 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
 
     assert isinstance(graph, WorkspaceGraph)
     assert graph.workspace_root == workspace_root.resolve()
-    names = [crate.name for crate in graph.crates]
-    assert names == ["crate", "helper"]
-    crate = graph.crates[0]
+    crates = graph.crates_by_name
+    assert set(crates) == {"crate", "helper"}
+    crate = crates["crate"]
     assert crate.publish is False
     assert crate.readme_is_workspace is True
     assert crate.dependencies == (
         WorkspaceDependency(package_id="helper-id", name="helper", kind="dev"),
     )
-    helper = graph.crates[1]
+    helper = crates["helper"]
     assert helper.publish is True
     assert helper.readme_is_workspace is False
 
@@ -276,12 +276,14 @@ def test_load_workspace_invokes_metadata(
     crate_manifest = tmp_path / "crate" / "Cargo.toml"
     crate_manifest.parent.mkdir(parents=True)
     crate_manifest.write_text(
-        """
-        [package]
-        name = "crate"
-        version = "0.1.0"
-        readme.workspace = true
-        """
+        textwrap.dedent(
+            """
+            [package]
+            name = "crate"
+            version = "0.1.0"
+            readme.workspace = true
+            """
+        ).strip()
     )
     metadata = {
         "workspace_root": str(tmp_path),

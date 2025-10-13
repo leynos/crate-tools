@@ -12,6 +12,8 @@ from tomlkit.exceptions import TOMLKitError
 
 WORKSPACE_ROOT_MISSING_MSG = "cargo metadata missing 'workspace_root'"
 
+ALLOWED_DEP_KINDS: typ.Final[set[str]] = {"normal", "dev", "build"}
+
 
 class WorkspaceModelError(RuntimeError):
     """Raised when the workspace model cannot be constructed."""
@@ -200,7 +202,7 @@ def _validate_dependency_kind(
             f"dependency kind must be string; received {type(kind_value).__name__}"
         )
         raise WorkspaceModelError(message)
-    if kind_value not in {"normal", "dev", "build"}:
+    if kind_value not in ALLOWED_DEP_KINDS:
         message = f"unsupported dependency kind {kind_value!r}"
         raise WorkspaceModelError(message)
     return typ.cast("typ.Literal['normal', 'dev', 'build']", kind_value)
