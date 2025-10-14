@@ -66,9 +66,9 @@ present.
 
 `bump` synchronises manifest versions across the workspace. The command
 requires the target version as a positional argument and rejects inputs that do
-not match the `<major>.<minor>.<patch>` semantic version pattern, while allowing
-optional pre-release and build metadata. All validation happens before the
-command loads workspace metadata, so mistakes fail fast.
+not match the `<major>.<minor>.<patch>` semantic version pattern, while
+allowing optional pre-release and build metadata. All validation happens before
+the command loads workspace metadata, so mistakes fail fast.
 
 When the version string passes validation, `bump` updates the workspace
 `Cargo.toml` and each member crate's manifest, unless the crate name appears in
@@ -83,12 +83,17 @@ Running the command updates:
 - `workspace.package.version` and any root `[package]` entry inside the main
   `Cargo.toml`.
 - `package.version` for each workspace crate not listed in `bump.exclude`.
+- Dependency requirements in `[dependencies]`, `[dev-dependencies]`, and
+  `[build-dependencies]` sections when they point to workspace members whose
+  versions were bumped. Existing requirement operators such as `^` or `~` are
+  preserved, and other inline options (for example `path = "../crate"`) remain
+  untouched.
 
 `lading` prints a short summary, for example:
 `Updated version to 1.2.3 in 3 manifest(s).` This lets release automation
 assert the change without parsing files directly. When every manifest already
-records the requested version, the CLI instead reports:
-`No manifest changes required; all versions already 1.2.3.`
+records the requested version, the CLI instead reports: `No manifest changes
+required; all versions already 1.2.3.`
 
 ### `publish`
 

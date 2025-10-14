@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import typing as typ
 from contextlib import suppress
@@ -10,7 +11,7 @@ from pathlib import Path
 
 from tomlkit import parse as parse_toml
 from tomlkit import string
-from tomlkit.items import Item, Table
+from tomlkit.items import InlineTable, Item, Table
 
 from lading import config as config_module
 from lading.utils import normalise_workspace_root
@@ -19,12 +20,23 @@ if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
     from lading.config import LadingConfig
-    from lading.workspace import WorkspaceGraph
+    from lading.workspace import WorkspaceCrate, WorkspaceGraph
+else:  # pragma: no cover - provide runtime placeholders for type checking imports
+    LadingConfig = WorkspaceCrate = WorkspaceGraph = TOMLDocument = typ.Any
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("package",),
     ("workspace", "package"),
 )
+
+_DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
+    None: "dependencies",
+    "normal": "dependencies",
+    "dev": "dev-dependencies",
+    "build": "build-dependencies",
+}
+
+_NON_DIGIT_PREFIX = re.compile(r"^([^\d]*)")
 
 
 def run(
@@ -43,16 +55,35 @@ def run(
 
         workspace = load_workspace(root_path)
 
+    excluded = set(configuration.bump.exclude)
+    updated_crate_names = {
+        crate.name for crate in workspace.crates if crate.name not in excluded
+    }
+
     changed = 0
     workspace_manifest = root_path / "Cargo.toml"
-    if _update_manifest(workspace_manifest, _WORKSPACE_SELECTORS, target_version):
+    workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
+    if _update_manifest(
+        workspace_manifest,
+        _WORKSPACE_SELECTORS,
+        target_version,
+        dependency_sections=workspace_dependency_sections,
+    ):
         changed += 1
 
-    excluded = set(configuration.bump.exclude)
     for crate in workspace.crates:
-        if crate.name in excluded:
+        selectors: tuple[tuple[str, ...], ...] = (
+            () if crate.name in excluded else (("package",),)
+        )
+        dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
+        if not selectors and not dependency_sections:
             continue
-        if _update_manifest(crate.manifest_path, (("package",),), target_version):
+        if _update_manifest(
+            crate.manifest_path,
+            selectors,
+            target_version,
+            dependency_sections=dependency_sections,
+        ):
             changed += 1
 
     if changed == 0:
@@ -64,6 +95,8 @@ def _update_manifest(
     manifest_path: Path,
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,
+    *,
+    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = None,
 ) -> bool:
     """Apply ``target_version`` to each table described by ``selectors``."""
     document = _parse_manifest(manifest_path)
@@ -71,9 +104,145 @@ def _update_manifest(
     for selector in selectors:
         table = _select_table(document, selector)
         changed |= _assign_version(table, target_version)
+    if dependency_sections:
+        changed |= _update_dependency_sections(
+            document, dependency_sections, target_version
+        )
     if changed:
         _write_atomic_text(manifest_path, document.as_string())
     return changed
+
+
+def _workspace_dependency_sections(
+    updated_crates: typ.Collection[str],
+) -> dict[str, set[str]]:
+    """Return dependency names to update for the workspace manifest."""
+    crate_names = {name for name in updated_crates if name}
+    if not crate_names:
+        return {}
+    return {
+        "dependencies": set(crate_names),
+        "dev-dependencies": set(crate_names),
+        "build-dependencies": set(crate_names),
+    }
+
+
+def _dependency_sections_for_crate(
+    crate: WorkspaceCrate,
+    updated_crates: typ.Collection[str],
+) -> dict[str, set[str]]:
+    """Return dependency names grouped by section for ``crate``."""
+    if not crate.dependencies:
+        return {}
+    targets = {name for name in updated_crates if name}
+    if not targets:
+        return {}
+    sections: dict[str, set[str]] = {}
+    for dependency in crate.dependencies:
+        if dependency.name not in targets:
+            continue
+        section = _DEPENDENCY_SECTION_BY_KIND.get(dependency.kind, "dependencies")
+        sections.setdefault(section, set()).add(dependency.name)
+    return sections
+
+
+def _update_dependency_sections(
+    document: TOMLDocument,
+    dependency_sections: typ.Mapping[str, typ.Collection[str]],
+    target_version: str,
+) -> bool:
+    """Apply ``target_version`` to dependency entries for the provided sections."""
+    changed = False
+    for section, names in dependency_sections.items():
+        if not names:
+            continue
+        table = _select_table(document, (section,))
+        if table is None:
+            continue
+        changed |= _update_dependency_table(table, names, target_version)
+    return changed
+
+
+def _update_dependency_table(
+    table: Table,
+    dependency_names: typ.Collection[str],
+    target_version: str,
+) -> bool:
+    """Update dependency requirements within ``table`` for ``dependency_names``."""
+    changed = False
+    for name in dependency_names:
+        if name not in table:
+            continue
+        entry = table[name]
+        if _update_dependency_entry(table, name, entry, target_version):
+            changed = True
+    return changed
+
+
+def _update_dependency_entry(
+    container: Table,
+    key: str,
+    entry: object,
+    target_version: str,
+) -> bool:
+    """Update a dependency entry with ``target_version`` if it records a version."""
+    if isinstance(entry, InlineTable | Table):
+        return _assign_dependency_version_field(entry, target_version)
+    replacement = _prepare_version_replacement(entry, target_version)
+    if replacement is None:
+        return False
+    container[key] = replacement
+    return True
+
+
+def _assign_dependency_version_field(
+    container: InlineTable | Table,
+    target_version: str,
+) -> bool:
+    """Update the ``version`` key of ``container`` if present."""
+    current = container.get("version")
+    replacement = _prepare_version_replacement(current, target_version)
+    if replacement is None:
+        return False
+    container["version"] = replacement
+    return True
+
+
+def _prepare_version_replacement(
+    value: object,
+    target_version: str,
+) -> Item | None:
+    """Return an updated requirement value when ``value`` stores a string."""
+    current = _value_as_string(value)
+    if current is None:
+        return None
+    replacement_text = _compose_requirement(current, target_version)
+    if replacement_text == current:
+        return None
+    replacement = string(replacement_text)
+    if isinstance(value, Item):
+        with suppress(AttributeError):  # Preserve inline comments and whitespace trivia
+            replacement._trivia = value._trivia  # type: ignore[attr-defined]
+    return replacement
+
+
+def _value_as_string(value: object) -> str | None:
+    """Return ``value`` as a string if possible."""
+    raw_value = value.value if isinstance(value, Item) else value
+    if isinstance(raw_value, str):
+        return raw_value
+    return None
+
+
+def _compose_requirement(existing: str, target_version: str) -> str:
+    """Prefix ``target_version`` with any non-numeric operator from ``existing``."""
+    match = _NON_DIGIT_PREFIX.match(existing)
+    if match is None:
+        return target_version
+    prefix = match.group(1)
+    if prefix == existing:
+        prefix = ""
+    return f"{prefix}{target_version}" if prefix else target_version
 
 
 def _parse_manifest(manifest_path: Path) -> TOMLDocument:

@@ -17,6 +17,7 @@ if typ.TYPE_CHECKING:
 from pytest_bdd import given, parsers, scenarios, then, when
 from tomlkit import array, table
 from tomlkit import parse as parse_toml
+from tomlkit.items import InlineTable, Item, Table
 
 from lading import config as config_module
 from tests.helpers.workspace_helpers import install_cargo_stub
@@ -183,6 +184,101 @@ def given_cargo_metadata_two_crates(
     )
 
 
+@given(
+    "cargo metadata describes a workspace with internal dependency requirements",
+)
+def given_cargo_metadata_with_internal_dependencies(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata for a workspace where beta depends on alpha across sections."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+
+    alpha_dir = workspace_directory / "crates" / "alpha"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    alpha_manifest = alpha_dir / "Cargo.toml"
+    alpha_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "alpha"
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    beta_dir = workspace_directory / "crates" / "beta"
+    beta_dir.mkdir(parents=True, exist_ok=True)
+    beta_manifest = beta_dir / "Cargo.toml"
+    beta_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "beta"
+            version = "0.1.0"
+
+            [dependencies]
+            alpha = "^0.1.0"
+
+            [dev-dependencies]
+            alpha = { version = "~0.1.0", path = "../alpha" }
+
+            [build-dependencies.alpha]
+            version = "0.1.0"
+            path = "../alpha"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            """
+            [workspace]
+            members = ["crates/alpha", "crates/beta"]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": [
+            {
+                "name": "alpha",
+                "version": "0.1.0",
+                "id": "alpha-id",
+                "manifest_path": str(alpha_manifest),
+                "dependencies": [],
+                "publish": None,
+            },
+            {
+                "name": "beta",
+                "version": "0.1.0",
+                "id": "beta-id",
+                "manifest_path": str(beta_manifest),
+                "dependencies": [
+                    {"name": "alpha", "package": "alpha-id"},
+                    {"name": "alpha", "package": "alpha-id", "kind": "dev"},
+                    {"name": "alpha", "package": "alpha-id", "kind": "build"},
+                ],
+                "publish": None,
+            },
+        ],
+        "workspace_members": ["alpha-id", "beta-id"],
+    }
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+    )
+
+
 @given(parsers.parse('bump.exclude contains "{crate_name}"'))
 def given_bump_exclude_contains(
     workspace_directory: Path,
@@ -309,6 +405,53 @@ def then_crate_manifest_version(
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == version
+
+
+def _extract_dependency_requirement(entry: object) -> str:
+    """Return the version requirement string recorded in a dependency entry."""
+    if isinstance(entry, Item):
+        value = entry.value
+        if isinstance(value, str):
+            return value
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, InlineTable | Table):
+        version_value = entry.get("version")
+        return _extract_dependency_requirement(version_value)
+    message = f"Dependency version entry is not a string: {entry!r}"
+    raise AssertionError(message)
+
+
+@then(
+    parsers.parse(
+        'the crate "{crate_name}" dependency "{dependency_name}" in "{section}" '
+        'has requirement "{expected}"'
+    )
+)
+def then_dependency_requirement(
+    cli_run: dict[str, typ.Any],
+    crate_name: str,
+    dependency_name: str,
+    section: str,
+    expected: str,
+) -> None:
+    """Assert that an internal dependency requirement reflects the new version."""
+    manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    try:
+        dependency_table = document[section]
+    except KeyError as exc:  # pragma: no cover - defensive guard
+        message = f"Section {section!r} missing from manifest {manifest_path}"
+        raise AssertionError(message) from exc
+    entry = dependency_table.get(dependency_name)
+    if entry is None:
+        message = (
+            "Dependency "
+            f"{dependency_name!r} missing from section {section!r} in {manifest_path}"
+        )
+        raise AssertionError(message)
+    requirement = _extract_dependency_requirement(entry)
+    assert requirement == expected
 
 
 @then("the publish command reports the workspace path, crate count, and strip patches")

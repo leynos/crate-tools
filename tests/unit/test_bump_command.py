@@ -9,7 +9,7 @@ from tomlkit import parse as parse_toml
 
 from lading import config as config_module
 from lading.commands import bump
-from lading.workspace import WorkspaceCrate, WorkspaceGraph
+from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -113,6 +113,84 @@ def test_run_skips_excluded_crates(tmp_path: Path) -> None:
     assert _load_version(excluded.manifest_path, ("package",)) == "0.1.0"
     included = workspace.crates[1]
     assert _load_version(included.manifest_path, ("package",)) == "2.0.0"
+
+
+def test_run_updates_internal_dependency_versions(tmp_path: Path) -> None:
+    """Internal dependency requirements are updated across dependency sections."""
+    workspace_root = tmp_path
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    _write_workspace_manifest(workspace_root, ["crates/alpha", "crates/beta"])
+
+    alpha_dir = workspace_root / "crates" / "alpha"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    alpha_manifest = alpha_dir / "Cargo.toml"
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    beta_dir = workspace_root / "crates" / "beta"
+    beta_dir.mkdir(parents=True, exist_ok=True)
+    beta_manifest = beta_dir / "Cargo.toml"
+    beta_manifest.write_text(
+        """
+        [package]
+        name = "beta"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha = "^0.1.0"
+
+        [dev-dependencies]
+        alpha = { version = "~0.1.0", path = "../alpha" }
+
+        [build-dependencies.alpha]
+        version = "0.1.0"
+        path = "../alpha"
+        """,
+        encoding="utf-8",
+    )
+
+    alpha_crate = WorkspaceCrate(
+        id="alpha-id",
+        name="alpha",
+        version="0.1.0",
+        manifest_path=alpha_manifest,
+        root_path=alpha_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+    beta_crate = WorkspaceCrate(
+        id="beta-id",
+        name="beta",
+        version="0.1.0",
+        manifest_path=beta_manifest,
+        root_path=beta_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(package_id="alpha-id", name="alpha", kind=None),
+            WorkspaceDependency(package_id="alpha-id", name="alpha", kind="dev"),
+            WorkspaceDependency(package_id="alpha-id", name="alpha", kind="build"),
+        ),
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=workspace_root,
+        crates=(alpha_crate, beta_crate),
+    )
+
+    configuration = _make_config()
+    bump.run(workspace_root, "1.2.3", configuration=configuration, workspace=workspace)
+
+    beta_document = parse_toml(beta_manifest.read_text(encoding="utf-8"))
+    assert beta_document["dependencies"]["alpha"].value == "^1.2.3"
+    dev_entry = beta_document["dev-dependencies"]["alpha"]
+    assert dev_entry["version"].value == "~1.2.3"
+    assert dev_entry["path"].value == "../alpha"
+    build_entry = beta_document["build-dependencies"]["alpha"]
+    assert build_entry["version"].value == "1.2.3"
+    assert build_entry["path"].value == "../alpha"
 
 
 def test_run_normalises_workspace_root(
