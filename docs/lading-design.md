@@ -136,11 +136,6 @@ possible.
 
 # `bump` table: Configuration for the 'bump' command.
 [bump]
-# A list of glob patterns for documentation files to update with the new version.
-# If unset, the tool will not attempt to modify any documentation files.
-# Example: doc_files = ["README.md", "docs/**/*.md"]
-doc_files = []
-
 # A list of crate names to exclude from the version bump process.
 # The tool will infer all publishable crates by default and apply
 # version bump to these.
@@ -266,16 +261,35 @@ lading bump <new_version> [--dry-run]
       part of the versioning workflow. The `bump` command will validate that
       this is possible.
 
-5. **Update Documentation Files:**
+5. **Update Documentation Files:** *(deferred to Step 2.2)*
 
-    - Read the `bump.doc_files` glob patterns from `lading.toml`.
-    - For each matching file, scan for TOML code fences (```toml).
+    - Introduce configuration-driven glob patterns for documentation files.
+    - For each matching file, scan for TOML fenced code blocks (three backticks + "toml").
     - Within each fence, parse the content and update the version of any
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
 
 6. **Report Changes:** Output a summary of all files that were (or would be)
    modified.
+
+### Implementation notes (Step 2.1)
+
+- Manifest rewrites use `tomlkit` so comments and formatting remain intact. The
+  implementation updates both `[package]` and `[workspace.package]` sections
+  in the workspace manifest when present.
+- `bump.exclude` is respected when iterating workspace crates. Any crate name
+  listed in the configuration keeps its existing `package.version` value during
+  the update pass.
+- The command reports a concise summary (`Updated version to … in N manifest(s).`)
+  so callers can assert success without inspecting the filesystem. When no
+  manifest requires changes, it reports a dedicated "No manifest changes required"
+  message instead of rewriting files.
+- Version arguments are validated at the CLI layer before the workspace model
+  loads. Invalid formats raise a user-facing error without touching the
+  filesystem, while values may include optional pre-release and build metadata.
+- The legacy `bump.doc_files` configuration knob has been retired until
+  documentation rewriting arrives in Step 2.2 to avoid implying unsupported
+  behaviour.
 
 ## 4. `publish` Subcommand Design
 

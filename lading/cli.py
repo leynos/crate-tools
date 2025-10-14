@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import typing as typ
 from contextlib import contextmanager
@@ -22,6 +23,11 @@ _WORKSPACE_PARAMETER = Parameter(
     help="Path to the Rust workspace root.",
 )
 WorkspaceRootOption = typ.Annotated[Path, _WORKSPACE_PARAMETER]
+
+_VERSION_PARAMETER = Parameter(
+    help="Target semantic version (e.g., 1.2.3) to set across workspace manifests.",
+)
+VersionArgument = typ.Annotated[str, _VERSION_PARAMETER]
 
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
@@ -166,13 +172,39 @@ def _run_with_context(
     return runner(workspace_root, configuration, workspace_model)
 
 
+_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def _validate_version_argument(version: str) -> None:
+    """Ensure ``version`` matches the semantic version pattern."""
+    if not _VERSION_PATTERN.fullmatch(version):
+        message = (
+            "Invalid version argument "
+            f"{version!r}. Expected semantic version in the form "
+            "<major>.<minor>.<patch> with optional pre-release/build segments."
+        )
+        raise SystemExit(message)
+
+
 @app.command
 def bump(
+    version: VersionArgument,
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
-    """Return placeholder acknowledgement for the ``bump`` subcommand."""
+    """Update workspace manifests to ``version``."""
+    _validate_version_argument(version)
     resolved = normalise_workspace_root(workspace_root)
-    return _run_with_context(resolved, commands.bump.run)
+    return _run_with_context(
+        resolved,
+        lambda root, configuration, workspace: commands.bump.run(
+            root,
+            version,
+            configuration=configuration,
+            workspace=workspace,
+        ),
+    )
 
 
 @app.command

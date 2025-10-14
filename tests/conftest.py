@@ -52,8 +52,6 @@ def minimal_config(write_config: typ.Callable[[str], Path]) -> Path:
     return write_config(
         """
         [bump]
-        doc_files = ["README.md"]
-
         [publish]
         strip_patches = "all"
         """

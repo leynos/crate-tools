@@ -26,8 +26,9 @@ class CommandDispatchCase:
 
     command_module: ModuleType
     command_name: str
-    placeholder_text: str
+    return_value: str
     cli_args: list[str]
+    expected_version: str | None = None
 
 
 @dc.dataclass(frozen=True)
@@ -115,13 +116,14 @@ def _make_workspace(root: Path) -> WorkspaceGraph:
         CommandDispatchCase(
             command_module=bump_command,
             command_name="bump",
-            placeholder_text="bump placeholder",
-            cli_args=["--workspace-root", "{tmp_path}", "bump"],
+            return_value="bump summary",
+            cli_args=["--workspace-root", "{tmp_path}", "bump", "7.8.9"],
+            expected_version="7.8.9",
         ),
         CommandDispatchCase(
             command_module=publish_command,
             command_name="publish",
-            placeholder_text="publish placeholder",
+            return_value="publish placeholder",
             cli_args=["publish", "--workspace-root", "{tmp_path}"],
         ),
     ],
@@ -137,15 +139,10 @@ def test_main_dispatches_command(
 
     workspace_graph = _make_workspace(tmp_path.resolve())
 
-    def fake_run(
-        workspace_root: Path,
-        configuration: config_module.LadingConfig,
-        workspace_model: WorkspaceGraph,
-    ) -> str:
-        called["workspace_root"] = workspace_root
-        called["configuration"] = configuration
-        called["workspace"] = workspace_model
-        return case.placeholder_text
+    def fake_run(*args: object, **kwargs: object) -> str:
+        called["args"] = args
+        called["kwargs"] = kwargs
+        return case.return_value
 
     monkeypatch.setattr(case.command_module, "run", fake_run)
     monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
@@ -153,15 +150,22 @@ def test_main_dispatches_command(
     assert case.command_name in args
     exit_code = cli.main(args)
     assert exit_code == 0
-    assert called["workspace_root"] == tmp_path.resolve()
-    configuration = called["configuration"]
+    captured_args = called["args"]
+    captured_kwargs = called["kwargs"]
     if case.command_module is bump_command:
-        assert configuration.bump.doc_files == ("README.md",)
+        workspace_root_arg, version_arg = captured_args
+        assert workspace_root_arg == tmp_path.resolve()
+        assert version_arg == case.expected_version
+        assert "configuration" in captured_kwargs
+        assert isinstance(captured_kwargs["configuration"], config_module.LadingConfig)
+        workspace_model = captured_kwargs["workspace"]
     else:
+        workspace_root_arg, configuration, workspace_model = captured_args
+        assert workspace_root_arg == tmp_path.resolve()
         assert configuration.publish.strip_patches == "all"
-    assert called["workspace"] is workspace_graph
+    assert workspace_model is workspace_graph
     captured = capsys.readouterr()
-    assert case.placeholder_text in captured.out
+    assert case.return_value in captured.out
 
 
 def test_main_handles_missing_subcommand(
@@ -192,7 +196,7 @@ def test_main_reports_missing_configuration(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """Return a clear error when configuration is missing."""
-    exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
+    exit_code = cli.main(["bump", "1.2.3", "--workspace-root", str(tmp_path)])
     assert exit_code == 1
     captured = capsys.readouterr()
     expected_path = tmp_path.resolve() / config_module.CONFIG_FILENAME
@@ -230,10 +234,63 @@ def test_main_handles_exceptions(
         raise case.exception
 
     monkeypatch.setattr(cli, "_dispatch_and_print", boom)
-    exit_code = cli.main(["bump", "--workspace-root", str(tmp_path)])
+    exit_code = cli.main(["bump", "1.2.3", "--workspace-root", str(tmp_path)])
     assert exit_code == case.expected_exit_code
     captured = capsys.readouterr()
     assert case.expected_message in captured.err
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_bump_command_validates_version(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Reject bump invocations that provide an invalid version string."""
+
+    def fail(*_: object, **__: object) -> typ.NoReturn:
+        pytest.fail("bump.run should not be invoked for invalid versions")
+
+    monkeypatch.setattr(bump_command, "run", fail)
+    exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Invalid version argument '1.2'" in captured.err
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_bump_command_accepts_extended_semver(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Accept semantic versions with pre-release and build metadata."""
+    graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        version: str,
+        *,
+        configuration: config_module.LadingConfig,
+        workspace: WorkspaceGraph,
+    ) -> str:
+        captured["workspace_root"] = workspace_root
+        captured["version"] = version
+        captured["configuration"] = configuration
+        captured["workspace"] = workspace
+        return "ok"
+
+    monkeypatch.setattr(bump_command, "run", fake_run)
+    version = "1.2.3-alpha.1+build.5"
+    exit_code = cli.main(["bump", version, "--workspace-root", str(tmp_path)])
+    assert exit_code == 0
+    capsys.readouterr()
+    assert captured["workspace_root"] == tmp_path.resolve()
+    assert captured["version"] == version
+    assert isinstance(captured["configuration"], config_module.LadingConfig)
+    assert captured["workspace"] is graph
 
 
 @pytest.mark.usefixtures("minimal_config")
@@ -243,11 +300,23 @@ def test_cyclopts_invoke_uses_workspace_env(
     """Invoke the Cyclopts app directly with workspace override propagation."""
     graph = _make_workspace(tmp_path.resolve())
     monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
-    result = cli.app(["bump", "--workspace-root", str(tmp_path)])
-    assert result == (
-        "bump placeholder invoked for "
-        f"{tmp_path.resolve()} (crates: 1 crate, doc files: README.md)"
-    )
+
+    def fake_run(
+        workspace_root: Path,
+        version: str,
+        *,
+        configuration: config_module.LadingConfig,
+        workspace: WorkspaceGraph,
+    ) -> str:
+        assert workspace_root == tmp_path.resolve()
+        assert version == "4.5.6"
+        assert isinstance(configuration, config_module.LadingConfig)
+        assert workspace is graph
+        return "bump summary"
+
+    monkeypatch.setattr(bump_command, "run", fake_run)
+    result = cli.app(["bump", "4.5.6", "--workspace-root", str(tmp_path)])
+    assert result == "bump summary"
 
 
 def test_workspace_env_sets_and_restores(
