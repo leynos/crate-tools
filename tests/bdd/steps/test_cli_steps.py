@@ -26,10 +26,25 @@ scenarios("../features/cli.feature")
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises."""
     config_path = tmp_path / config_module.CONFIG_FILENAME
-    config_path.write_text(
-        '[bump]\ndoc_files = ["README.md"]\n\n[publish]\nstrip_patches = "all"\n'
-    )
+    config_path.write_text('[bump]\n\n[publish]\nstrip_patches = "all"\n')
     return tmp_path
+
+
+@given(parsers.parse('the workspace manifests record version "{version}"'))
+def given_workspace_versions_match(
+    workspace_directory: Path,
+    version: str,
+) -> None:
+    """Ensure the workspace and member manifests record ``version``."""
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    workspace_document = parse_toml(workspace_manifest.read_text())
+    workspace_document["workspace"]["package"]["version"] = version
+    workspace_manifest.write_text(workspace_document.as_string())
+
+    crate_manifest = workspace_directory / "crates" / "alpha" / "Cargo.toml"
+    crate_document = parse_toml(crate_manifest.read_text())
+    crate_document["package"]["version"] = version
+    crate_manifest.write_text(crate_document.as_string())
 
 
 @given(
@@ -101,8 +116,8 @@ def _run_cli(
         "lading.cli",
         "--workspace-root",
         str(workspace_directory),
+        *command_args,
     ]
-    command.extend(command_args)
     completed = subprocess.run(  # noqa: S603
         command,
         check=False,
@@ -146,6 +161,17 @@ def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) ->
     assert cli_run["returncode"] == 0
     stdout = cli_run["stdout"]
     assert f"Updated version to {version}" in stdout
+
+
+@then(parsers.parse('the bump command reports no manifest changes for "{version}"'))
+def then_command_reports_no_changes(
+    cli_run: dict[str, typ.Any],
+    version: str,
+) -> None:
+    """Assert that the bump command reports that no updates were required."""
+    assert cli_run["returncode"] == 0
+    stdout = cli_run["stdout"]
+    assert f"No manifest changes required; all versions already {version}." in stdout
 
 
 @then(parsers.parse('the workspace manifest version is "{version}"'))

@@ -16,7 +16,6 @@ from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 def _make_config() -> config_module.LadingConfig:
     """Create a representative configuration instance for placeholder tests."""
     return config_module.LadingConfig(
-        bump=config_module.BumpConfig(doc_files=("README.md",)),
         publish=config_module.PublishConfig(strip_patches="all"),
     )
 

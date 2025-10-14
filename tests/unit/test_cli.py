@@ -156,9 +156,7 @@ def test_main_dispatches_command(
         workspace_root_arg, version_arg = captured_args
         assert workspace_root_arg == tmp_path.resolve()
         assert version_arg == case.expected_version
-        configuration = captured_kwargs["configuration"]
         workspace_model = captured_kwargs["workspace"]
-        assert configuration.bump.doc_files == ("README.md",)
     else:
         workspace_root_arg, configuration, workspace_model = captured_args
         assert workspace_root_arg == tmp_path.resolve()
@@ -241,6 +239,24 @@ def test_main_handles_exceptions(
 
 
 @pytest.mark.usefixtures("minimal_config")
+def test_bump_command_validates_version(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Reject bump invocations that provide an invalid version string."""
+
+    def fail(*_: object, **__: object) -> typ.NoReturn:
+        pytest.fail("bump.run should not be invoked for invalid versions")
+
+    monkeypatch.setattr(bump_command, "run", fail)
+    exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Invalid version" in captured.err
+
+
+@pytest.mark.usefixtures("minimal_config")
 def test_cyclopts_invoke_uses_workspace_env(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -258,7 +274,6 @@ def test_cyclopts_invoke_uses_workspace_env(
         assert workspace_root == tmp_path.resolve()
         assert version == "4.5.6"
         assert workspace is graph
-        assert configuration.bump.doc_files == ("README.md",)
         return "bump summary"
 
     monkeypatch.setattr(bump_command, "run", fake_run)

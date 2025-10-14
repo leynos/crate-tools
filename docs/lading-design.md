@@ -136,11 +136,6 @@ possible.
 
 # `bump` table: Configuration for the 'bump' command.
 [bump]
-# A list of glob patterns for documentation files to update with the new version.
-# If unset, the tool will not attempt to modify any documentation files.
-# Example: doc_files = ["README.md", "docs/**/*.md"]
-doc_files = []
-
 # A list of crate names to exclude from the version bump process.
 # The tool will infer all publishable crates by default and apply
 # version bump to these.
@@ -266,9 +261,9 @@ lading bump <new_version> [--dry-run]
       part of the versioning workflow. The `bump` command will validate that
       this is possible.
 
-5. **Update Documentation Files:**
+5. **Update Documentation Files:** *(deferred to Step 2.2)*
 
-    - Read the `bump.doc_files` glob patterns from `lading.toml`.
+    - Introduce configuration-driven glob patterns for documentation files.
     - For each matching file, scan for TOML code fences (```toml).
     - Within each fence, parse the content and update the version of any
       dependency that is also a workspace member to `<new_version>`. This
@@ -287,7 +282,13 @@ lading bump <new_version> [--dry-run]
   the update pass.
 - The command reports a concise summary (`Updated version to … in N
   manifest(s).`) so callers can assert success without inspecting the file
+  system. When no manifest requires changes the command reports a dedicated
+  "No manifest changes required" message instead of rewriting files.
+- Version arguments are validated at the CLI layer before the workspace model
+  loads. Invalid formats raise a user-facing error without touching the file
   system.
+- The `bump.doc_files` configuration knob has been removed until documentation
+  rewriting arrives in Step 2.2 to avoid suggesting unsupported behaviour.
 
 ## 4. `publish` Subcommand Design
 

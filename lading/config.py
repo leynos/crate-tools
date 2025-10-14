@@ -36,7 +36,6 @@ class MissingConfigurationError(ConfigurationError):
 class BumpConfig:
     """Settings for the ``bump`` command."""
 
-    doc_files: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
 
     @classmethod
@@ -44,13 +43,12 @@ class BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        unknown = set(mapping) - {"doc_files", "exclude"}
+        unknown = set(mapping) - {"exclude"}
         if unknown:
             joined = ", ".join(sorted(unknown))
             message = f"Unknown bump option(s): {joined}."
             raise ConfigurationError(message)
         return cls(
-            doc_files=_string_tuple(mapping.get("doc_files"), "bump.doc_files"),
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
         )
 

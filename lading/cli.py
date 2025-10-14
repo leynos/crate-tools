@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import typing as typ
 from contextlib import contextmanager
@@ -166,12 +167,26 @@ def _run_with_context(
     return runner(workspace_root, configuration, workspace_model)
 
 
+_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def _validate_version_argument(version: str) -> None:
+    """Ensure ``version`` matches the ``major.minor.patch`` pattern."""
+    if not _VERSION_PATTERN.fullmatch(version):
+        message = (
+            "Invalid version argument. Expected semantic version in the "
+            "form <major>.<minor>.<patch>."
+        )
+        raise SystemExit(message)
+
+
 @app.command
 def bump(
     version: str,
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Update workspace manifests to ``version``."""
+    _validate_version_argument(version)
     resolved = normalise_workspace_root(workspace_root)
     return _run_with_context(
         resolved,

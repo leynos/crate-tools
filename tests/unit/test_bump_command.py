@@ -120,3 +120,85 @@ def test_run_uses_loaded_configuration_and_workspace(
     monkeypatch.setattr("lading.workspace.load_workspace", lambda root: workspace)
     bump.run(tmp_path, "9.9.9")
     assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "9.9.9"
+
+
+def test_run_reports_when_versions_already_match(tmp_path: Path) -> None:
+    """Return a descriptive message when manifests already match the target."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
+    target_version = "0.1.0"
+    message = bump.run(
+        tmp_path,
+        target_version,
+        configuration=configuration,
+        workspace=workspace,
+    )
+    assert message == "No manifest changes required; all versions already 0.1.0."
+
+
+def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
+    """Applying a new version persists changes to disk."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n')
+    changed = bump._update_manifest(manifest_path, (("package",),), "1.0.0")
+    assert changed is True
+    assert _load_version(manifest_path, ("package",)) == "1.0.0"
+
+
+def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
+    """No write occurs when the manifest already records the target version."""
+    manifest_path = tmp_path / "Cargo.toml"
+    original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
+    manifest_path.write_text(original)
+    changed = bump._update_manifest(manifest_path, (("package",),), "0.1.0")
+    assert changed is False
+    assert manifest_path.read_text() == original
+
+
+def test_select_table_returns_nested_table() -> None:
+    """Select nested tables using dotted selectors."""
+    document = parse_toml('[workspace]\n[workspace.package]\nversion = "0.1.0"\n')
+    table = bump._select_table(document, ("workspace", "package"))
+    assert table is document["workspace"]["package"]
+
+
+def test_select_table_returns_none_for_missing() -> None:
+    """Selectors that do not resolve to tables return ``None``."""
+    document = parse_toml("[workspace]\nmembers = []\n")
+    table = bump._select_table(document, ("workspace", "package"))
+    assert table is None
+
+
+def test_assign_version_handles_absent_table() -> None:
+    """``_assign_version`` tolerates missing tables."""
+    assert bump._assign_version(None, "1.0.0") is False
+
+
+def test_assign_version_updates_value() -> None:
+    """Assign a new version when the stored value differs."""
+    table = parse_toml('[package]\nname = "demo"\nversion = "0.1.0"\n')["package"]
+    assert bump._assign_version(table, "2.0.0") is True
+    assert table["version"] == "2.0.0"
+
+
+def test_assign_version_detects_existing_value() -> None:
+    """Return ``False`` when the version already matches."""
+    table = parse_toml('[package]\nversion = "0.1.0"\n')["package"]
+    assert bump._assign_version(table, "0.1.0") is False
+
+
+def test_value_matches_accepts_plain_strings() -> None:
+    """Strings compare directly when checking for version matches."""
+    assert bump._value_matches("1.0.0", "1.0.0") is True
+    assert bump._value_matches("1.0.0", "2.0.0") is False
+
+
+def test_value_matches_inspects_wrapped_values() -> None:
+    """Objects exposing a ``value`` attribute are compared via that attribute."""
+
+    class Wrapper:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+    assert bump._value_matches(Wrapper("3.0.0"), "3.0.0") is True
+    assert bump._value_matches(Wrapper("3.0.0"), "4.0.0") is False

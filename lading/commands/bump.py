@@ -111,6 +111,4 @@ def _value_matches(value: object, expected: str) -> bool:
     """Return ``True`` when ``value`` already equals ``expected``."""
     sentinel = object()
     attribute = getattr(value, "value", sentinel)
-    if attribute is not sentinel:
-        return attribute == expected
-    return value == expected
+    return value == expected if attribute is sentinel else attribute == expected

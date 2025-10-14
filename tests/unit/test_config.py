@@ -25,7 +25,6 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         tmp_path,
         """
         [bump]
-        doc_files = ["README.md", "docs/**/*.md"]
         exclude = ["internal"]
 
         [publish]
@@ -37,7 +36,6 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
 
     configuration = config_module.load_configuration(tmp_path)
 
-    assert configuration.bump.doc_files == ("README.md", "docs/**/*.md")
     assert configuration.bump.exclude == ("internal",)
     assert configuration.publish.exclude == ("examples",)
     assert configuration.publish.order == ("core",)
@@ -47,13 +45,6 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "config_body",
     [
-        pytest.param(
-            """
-            [bump]
-            doc_files = [1]
-            """,
-            id="invalid_sequence_values",
-        ),
         pytest.param(
             """
             [publish]
@@ -100,7 +91,6 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
 
     configuration = config_module.load_configuration(tmp_path)
 
-    assert configuration.bump.doc_files == ()
     assert configuration.publish.strip_patches == "per-crate"
 
 
