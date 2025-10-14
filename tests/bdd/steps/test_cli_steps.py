@@ -15,6 +15,7 @@ if typ.TYPE_CHECKING:
     from cmd_mox import CmdMox
 
 from pytest_bdd import given, parsers, scenarios, then, when
+from tomlkit import array, table
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
@@ -27,7 +28,9 @@ scenarios("../features/cli.feature")
 def given_workspace_directory(tmp_path: Path) -> Path:
     """Provide a temporary workspace root for CLI exercises."""
     config_path = tmp_path / config_module.CONFIG_FILENAME
-    config_path.write_text('[bump]\n\n[publish]\nstrip_patches = "all"\n')
+    config_path.write_text(
+        '[bump]\n\n[publish]\nstrip_patches = "all"\n', encoding="utf-8"
+    )
     return tmp_path
 
 
@@ -41,17 +44,17 @@ def given_workspace_versions_match(
     if not workspace_manifest.exists():
         message = f"Workspace manifest not found: {workspace_manifest}"
         raise AssertionError(message)
-    workspace_document = parse_toml(workspace_manifest.read_text())
+    workspace_document = parse_toml(workspace_manifest.read_text(encoding="utf-8"))
     workspace_document["workspace"]["package"]["version"] = version
-    workspace_manifest.write_text(workspace_document.as_string())
+    workspace_manifest.write_text(workspace_document.as_string(), encoding="utf-8")
 
     crate_manifest = workspace_directory / "crates" / "alpha" / "Cargo.toml"
     if not crate_manifest.exists():
         message = f"Crate manifest not found: {crate_manifest}"
         raise AssertionError(message)
-    crate_document = parse_toml(crate_manifest.read_text())
+    crate_document = parse_toml(crate_manifest.read_text(encoding="utf-8"))
     crate_document["package"]["version"] = version
-    crate_manifest.write_text(crate_document.as_string())
+    crate_manifest.write_text(crate_document.as_string(), encoding="utf-8")
 
 
 @given(
@@ -84,7 +87,8 @@ def given_cargo_metadata_sample(
             [workspace.package]
             version = "0.1.0"
             """
-        ).lstrip()
+        ).lstrip(),
+        encoding="utf-8",
     )
     manifest_path.write_text(
         """
@@ -92,7 +96,8 @@ def given_cargo_metadata_sample(
         name = "alpha"
         version = "0.1.0"
         readme.workspace = true
-        """
+        """,
+        encoding="utf-8",
     )
     payload = {
         "workspace_root": str(workspace_directory),
@@ -112,6 +117,91 @@ def given_cargo_metadata_sample(
         exit_code=0,
         stdout=json.dumps(payload),
     )
+
+
+@given(
+    "cargo metadata describes a workspace with crates alpha and beta",
+)
+def given_cargo_metadata_two_crates(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata for a workspace containing two crates."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+    crate_names = ("alpha", "beta")
+    crate_entries = []
+    members: list[str] = []
+    for name in crate_names:
+        crate_dir = workspace_directory / "crates" / name
+        crate_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = crate_dir / "Cargo.toml"
+        manifest_path.write_text(
+            textwrap.dedent(
+                f"""
+                [package]
+                name = "{name}"
+                version = "0.1.0"
+                readme.workspace = true
+                """
+            ).lstrip(),
+            encoding="utf-8",
+        )
+        crate_entries.append(
+            {
+                "name": name,
+                "version": "0.1.0",
+                "id": f"{name}-id",
+                "manifest_path": str(manifest_path),
+                "dependencies": [],
+                "publish": None,
+            }
+        )
+        members.append(f"crates/{name}")
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    members_literal = ", ".join(f'"{member}"' for member in members)
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            f"""
+            [workspace]
+            members = [{members_literal}]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": crate_entries,
+        "workspace_members": [f"{name}-id" for name in crate_names],
+    }
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+    )
+
+
+@given(parsers.parse('bump.exclude contains "{crate_name}"'))
+def given_bump_exclude_contains(
+    workspace_directory: Path,
+    crate_name: str,
+) -> None:
+    """Ensure ``crate_name`` appears in the ``bump.exclude`` configuration."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = parse_toml(config_path.read_text(encoding="utf-8"))
+    bump_table = document.get("bump")
+    if bump_table is None:
+        bump_table = table()
+        document["bump"] = bump_table
+    exclude = bump_table.get("exclude")
+    if exclude is None:
+        exclude = array()
+        bump_table["exclude"] = exclude
+    if crate_name not in exclude:
+        exclude.append(crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
 
 
 def _run_cli(
@@ -204,7 +294,7 @@ def then_workspace_manifest_version(
 ) -> None:
     """Validate the workspace manifest was updated to ``version``."""
     manifest_path = cli_run["workspace"] / "Cargo.toml"
-    document = parse_toml(manifest_path.read_text())
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     workspace_package = document["workspace"]["package"]
     assert workspace_package["version"] == version
 
@@ -217,7 +307,7 @@ def then_crate_manifest_version(
 ) -> None:
     """Validate the crate manifest was updated to ``version``."""
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
-    document = parse_toml(manifest_path.read_text())
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == version
 
 

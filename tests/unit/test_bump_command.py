@@ -164,6 +164,20 @@ def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     assert _load_version(manifest_path, ("package",)) == "1.0.0"
 
 
+def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
+    """Inline comments survive manifest rewrites."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        '[package]\nversion = "0.1.0"  # keep me\n', encoding="utf-8"
+    )
+    changed = bump._update_manifest(manifest_path, (("package",),), "1.2.3")
+    assert changed is True
+    text = manifest_path.read_text(encoding="utf-8")
+    assert "# keep me" in text
+    document = parse_toml(text)
+    assert document["package"]["version"] == "1.2.3"
+
+
 def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     """No write occurs when the manifest already records the target version."""
     manifest_path = tmp_path / "Cargo.toml"
@@ -212,12 +226,9 @@ def test_value_matches_accepts_plain_strings() -> None:
     assert bump._value_matches("1.0.0", "2.0.0") is False
 
 
-def test_value_matches_inspects_wrapped_values() -> None:
-    """Objects exposing a ``value`` attribute are compared via that attribute."""
-
-    class Wrapper:
-        def __init__(self, value: str) -> None:
-            self.value = value
-
-    assert bump._value_matches(Wrapper("3.0.0"), "3.0.0") is True
-    assert bump._value_matches(Wrapper("3.0.0"), "4.0.0") is False
+def test_value_matches_handles_toml_items() -> None:
+    """TOML items compare via their stored string value."""
+    document = parse_toml('version = "3.0.0"')
+    item = document["version"]
+    assert bump._value_matches(item, "3.0.0") is True
+    assert bump._value_matches(item, "4.0.0") is False

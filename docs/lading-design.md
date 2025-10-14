@@ -264,7 +264,7 @@ lading bump <new_version> [--dry-run]
 5. **Update Documentation Files:** *(deferred to Step 2.2)*
 
     - Introduce configuration-driven glob patterns for documentation files.
-    - For each matching file, scan for TOML code fences (```toml).
+    - For each matching file, scan for TOML fenced code blocks (three backticks + "toml").
     - Within each fence, parse the content and update the version of any
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
@@ -280,15 +280,16 @@ lading bump <new_version> [--dry-run]
 - `bump.exclude` is respected when iterating workspace crates. Any crate name
   listed in the configuration keeps its existing `package.version` value during
   the update pass.
-- The command reports a concise summary (`Updated version to … in N
-  manifest(s).`) so callers can assert success without inspecting the file
-  system. When no manifest requires changes, the command reports a dedicated
-  "No manifest changes required" message instead of rewriting files.
+- The command reports a concise summary (`Updated version to … in N manifest(s).`)
+  so callers can assert success without inspecting the filesystem. When no
+  manifest requires changes, it reports a dedicated "No manifest changes required"
+  message instead of rewriting files.
 - Version arguments are validated at the CLI layer before the workspace model
   loads. Invalid formats raise a user-facing error without touching the
-  filesystem.
-- The `bump.doc_files` configuration knob has been removed until documentation
-  rewriting arrives in Step 2.2 to avoid suggesting unsupported behaviour.
+  filesystem, while values may include optional pre-release and build metadata.
+- The legacy `bump.doc_files` configuration knob has been retired until
+  documentation rewriting arrives in Step 2.2 to avoid implying unsupported
+  behaviour.
 
 ## 4. `publish` Subcommand Design
 

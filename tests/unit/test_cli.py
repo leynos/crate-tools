@@ -255,7 +255,42 @@ def test_bump_command_validates_version(
     exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
     assert exit_code == 1
     captured = capsys.readouterr()
-    assert "Invalid version" in captured.err
+    assert "Invalid version argument '1.2'" in captured.err
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_bump_command_accepts_extended_semver(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Accept semantic versions with pre-release and build metadata."""
+    graph = _make_workspace(tmp_path.resolve())
+    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    captured: dict[str, object] = {}
+
+    def fake_run(
+        workspace_root: Path,
+        version: str,
+        *,
+        configuration: config_module.LadingConfig,
+        workspace: WorkspaceGraph,
+    ) -> str:
+        captured["workspace_root"] = workspace_root
+        captured["version"] = version
+        captured["configuration"] = configuration
+        captured["workspace"] = workspace
+        return "ok"
+
+    monkeypatch.setattr(bump_command, "run", fake_run)
+    version = "1.2.3-alpha.1+build.5"
+    exit_code = cli.main(["bump", version, "--workspace-root", str(tmp_path)])
+    assert exit_code == 0
+    capsys.readouterr()
+    assert captured["workspace_root"] == tmp_path.resolve()
+    assert captured["version"] == version
+    assert isinstance(captured["configuration"], config_module.LadingConfig)
+    assert captured["workspace"] is graph
 
 
 @pytest.mark.usefixtures("minimal_config")

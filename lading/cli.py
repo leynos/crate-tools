@@ -172,15 +172,18 @@ def _run_with_context(
     return runner(workspace_root, configuration, workspace_model)
 
 
-_VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
 
 
 def _validate_version_argument(version: str) -> None:
-    """Ensure ``version`` matches the ``major.minor.patch`` pattern."""
+    """Ensure ``version`` matches the semantic version pattern."""
     if not _VERSION_PATTERN.fullmatch(version):
         message = (
-            "Invalid version argument. Expected semantic version in the "
-            "form <major>.<minor>.<patch>."
+            "Invalid version argument "
+            f"{version!r}. Expected semantic version in the form "
+            "<major>.<minor>.<patch> with optional pre-release/build segments."
         )
         raise SystemExit(message)
 

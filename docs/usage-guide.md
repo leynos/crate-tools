@@ -66,11 +66,12 @@ present.
 
 `bump` synchronises manifest versions across the workspace. The command
 requires the target version as a positional argument and rejects inputs that do
-not match the `<major>.<minor>.<patch>` semantic version pattern. All validation
-happens before the command loads workspace metadata, so mistakes fail fast.
+not match the `<major>.<minor>.<patch>` semantic version pattern, while allowing
+optional pre-release and build metadata. All validation happens before the
+command loads workspace metadata, so mistakes fail fast.
 
-When the version string passes validation, `bump` touches the workspace
-`Cargo.toml` alongside every member crate unless the crate name appears in
+When the version string passes validation, `bump` updates the workspace
+`Cargo.toml` and each member crate's manifest, unless the crate name appears in
 `bump.exclude` within `lading.toml`.
 
 ```bash
@@ -83,10 +84,10 @@ Running the command updates:
   `Cargo.toml`.
 - `package.version` for each workspace crate not listed in `bump.exclude`.
 
-`lading` prints a short summary such as
-`Updated version to 1.2.3 in 3 manifest(s).`, so that release automation can
+`lading` prints a short summary, for example:
+`Updated version to 1.2.3 in 3 manifest(s).` This lets release automation
 assert the change without parsing files directly. When every manifest already
-records the requested version, the CLI instead reports
+records the requested version, the CLI instead reports:
 `No manifest changes required; all versions already 1.2.3.`
 
 ### `publish`
@@ -125,7 +126,7 @@ print(metadata["workspace_root"])
 ```
 
 The helper normalises the workspace path, invokes
-`cargo metadata -- format-version 1` using `plumbum`, and returns the parsed
+`cargo metadata --format-version 1` using `plumbum`, and returns the parsed
 JSON mapping. Any execution errors or invalid output raise `CargoMetadataError`
 with a descriptive message so callers can present actionable feedback to users.
 

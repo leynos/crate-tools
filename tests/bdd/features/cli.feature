@@ -11,7 +11,15 @@ Feature: Lading CLI scaffolding
     Given a workspace directory with configuration
     When I invoke lading bump 1.2 with that workspace
     Then the CLI exits with code 1
-    And the stderr contains "Invalid version argument"
+    And the stderr contains "Invalid version argument '1.2'"
+
+  Scenario: Bumping workspace versions skips excluded crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with crates alpha and beta
+    And bump.exclude contains "alpha"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the crate "alpha" manifest version is "0.1.0"
+    And the crate "beta" manifest version is "1.2.3"
 
   Scenario: Bumping workspace versions when already up to date
     Given a workspace directory with configuration

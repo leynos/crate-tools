@@ -9,7 +9,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from tomlkit import parse as parse_toml
-from tomlkit.items import Table
+from tomlkit import string
+from tomlkit.items import Item, Table
 
 from lading import config as config_module
 from lading.utils import normalise_workspace_root
@@ -107,15 +108,20 @@ def _assign_version(table: Table | None, target_version: str) -> bool:
     current = table.get("version")
     if _value_matches(current, target_version):
         return False
-    table["version"] = target_version
+    if isinstance(current, Item):
+        replacement = string(target_version)
+        with suppress(AttributeError):  # Preserve existing formatting and comments
+            replacement._trivia = current._trivia  # type: ignore[attr-defined]
+        table["version"] = replacement
+    else:
+        table["version"] = target_version
     return True
 
 
 def _value_matches(value: object, expected: str) -> bool:
     """Return ``True`` when ``value`` already equals ``expected``."""
-    if hasattr(value, "value"):
-        attribute = object.__getattribute__(value, "value")
-        return attribute == expected
+    if isinstance(value, Item):
+        return value.value == expected
     return value == expected
 
 
