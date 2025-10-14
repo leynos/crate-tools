@@ -128,12 +128,17 @@ def _value_matches(value: object, expected: str) -> bool:
 def _write_atomic_text(manifest_path: Path, content: str) -> None:
     """Persist ``content`` to ``manifest_path`` atomically using UTF-8 encoding."""
     dirpath = manifest_path.parent
+    existing_mode: int | None = None
+    with suppress(FileNotFoundError):
+        existing_mode = manifest_path.stat().st_mode
     fd, tmp_path = tempfile.mkstemp(
         dir=dirpath,
         prefix=f"{manifest_path.name}.",
         text=True,
     )
     try:
+        if existing_mode is not None:
+            os.fchmod(fd, existing_mode)
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
         Path(tmp_path).replace(manifest_path)
