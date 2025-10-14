@@ -24,6 +24,11 @@ _WORKSPACE_PARAMETER = Parameter(
 )
 WorkspaceRootOption = typ.Annotated[Path, _WORKSPACE_PARAMETER]
 
+_VERSION_PARAMETER = Parameter(
+    help="Target semantic version (e.g., 1.2.3) to set across workspace manifests.",
+)
+VersionArgument = typ.Annotated[str, _VERSION_PARAMETER]
+
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
 
@@ -182,7 +187,7 @@ def _validate_version_argument(version: str) -> None:
 
 @app.command
 def bump(
-    version: str,
+    version: VersionArgument,
     workspace_root: WorkspaceRootOption | None = None,
 ) -> str:
     """Update workspace manifests to ``version``."""

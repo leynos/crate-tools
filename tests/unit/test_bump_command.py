@@ -84,6 +84,25 @@ def test_run_updates_workspace_and_members(tmp_path: Path) -> None:
         assert _load_version(crate.manifest_path, ("package",)) == "1.2.3"
 
 
+def test_run_updates_root_package_section(tmp_path: Path) -> None:
+    """The workspace manifest `[package]` section also receives the new version."""
+    workspace = _make_workspace(tmp_path)
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        "[package]\n"
+        'name = "workspace"\n'
+        'version = "0.1.0"\n\n'
+        "[workspace]\n"
+        'members = ["crates/alpha", "crates/beta"]\n\n'
+        "[workspace.package]\n"
+        'version = "0.1.0"\n'
+    )
+    configuration = _make_config()
+    bump.run(tmp_path, "7.8.9", configuration=configuration, workspace=workspace)
+    assert _load_version(manifest_path, ("package",)) == "7.8.9"
+    assert _load_version(manifest_path, ("workspace", "package")) == "7.8.9"
+
+
 def test_run_skips_excluded_crates(tmp_path: Path) -> None:
     """Crates listed in `bump.exclude` retain their original version."""
     workspace = _make_workspace(tmp_path)

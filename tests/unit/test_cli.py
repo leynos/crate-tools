@@ -156,6 +156,8 @@ def test_main_dispatches_command(
         workspace_root_arg, version_arg = captured_args
         assert workspace_root_arg == tmp_path.resolve()
         assert version_arg == case.expected_version
+        assert "configuration" in captured_kwargs
+        assert isinstance(captured_kwargs["configuration"], config_module.LadingConfig)
         workspace_model = captured_kwargs["workspace"]
     else:
         workspace_root_arg, configuration, workspace_model = captured_args
@@ -273,6 +275,7 @@ def test_cyclopts_invoke_uses_workspace_env(
     ) -> str:
         assert workspace_root == tmp_path.resolve()
         assert version == "4.5.6"
+        assert isinstance(configuration, config_module.LadingConfig)
         assert workspace is graph
         return "bump summary"
 

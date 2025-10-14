@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import typing as typ
+from contextlib import suppress
+from pathlib import Path
 
 from tomlkit import parse as parse_toml
 from tomlkit.items import Table
@@ -11,8 +15,6 @@ from lading import config as config_module
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from tomlkit.toml_document import TOMLDocument
 
     from lading.config import LadingConfig
@@ -69,13 +71,13 @@ def _update_manifest(
         table = _select_table(document, selector)
         changed |= _assign_version(table, target_version)
     if changed:
-        manifest_path.write_text(document.as_string())
+        _write_atomic_text(manifest_path, document.as_string())
     return changed
 
 
 def _parse_manifest(manifest_path: Path) -> TOMLDocument:
     """Load ``manifest_path`` into a :class:`tomlkit` document."""
-    content = manifest_path.read_text()
+    content = manifest_path.read_text(encoding="utf-8")
     return parse_toml(content)
 
 
@@ -84,6 +86,8 @@ def _select_table(
     keys: tuple[str, ...],
 ) -> Table | None:
     """Return the nested table located by ``keys`` if it exists."""
+    if not keys:
+        return document if isinstance(document, Table) else None
     current: object = document
     for key in keys:
         getter = getattr(current, "get", None)
@@ -109,6 +113,24 @@ def _assign_version(table: Table | None, target_version: str) -> bool:
 
 def _value_matches(value: object, expected: str) -> bool:
     """Return ``True`` when ``value`` already equals ``expected``."""
-    sentinel = object()
-    attribute = getattr(value, "value", sentinel)
-    return value == expected if attribute is sentinel else attribute == expected
+    if hasattr(value, "value"):
+        attribute = object.__getattribute__(value, "value")
+        return attribute == expected
+    return value == expected
+
+
+def _write_atomic_text(manifest_path: Path, content: str) -> None:
+    """Persist ``content`` to ``manifest_path`` atomically using UTF-8 encoding."""
+    dirpath = manifest_path.parent
+    fd, tmp_path = tempfile.mkstemp(
+        dir=dirpath,
+        prefix=f"{manifest_path.name}.",
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+        Path(tmp_path).replace(manifest_path)
+    finally:
+        with suppress(FileNotFoundError):
+            Path(tmp_path).unlink()

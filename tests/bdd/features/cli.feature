@@ -7,6 +7,12 @@ Feature: Lading CLI scaffolding
     And the workspace manifest version is "1.2.3"
     And the crate "alpha" manifest version is "1.2.3"
 
+  Scenario: Bumping with an invalid version fails fast
+    Given a workspace directory with configuration
+    When I invoke lading bump 1.2 with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Invalid version argument"
+
   Scenario: Bumping workspace versions when already up to date
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

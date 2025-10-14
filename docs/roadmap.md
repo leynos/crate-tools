@@ -123,7 +123,7 @@ handling workspace READMEs.
 - [ ] **Implement Configurable Documentation Updates:**
 
   - **Outcome:** The `bump` command updates version numbers within TOML code
-    fences in documentation files using new configuration introduced alongside
+    fences in documentation files, using new configuration introduced alongside
     this feature.
   - **Completion Criteria:** A test case with a fixture workspace containing a
     `README.md` with a TOML snippet confirms the version inside the snippet is

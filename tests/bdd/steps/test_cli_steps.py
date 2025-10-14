@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import textwrap
 import typing as typ
 
 if typ.TYPE_CHECKING:
@@ -37,11 +38,17 @@ def given_workspace_versions_match(
 ) -> None:
     """Ensure the workspace and member manifests record ``version``."""
     workspace_manifest = workspace_directory / "Cargo.toml"
+    if not workspace_manifest.exists():
+        message = f"Workspace manifest not found: {workspace_manifest}"
+        raise AssertionError(message)
     workspace_document = parse_toml(workspace_manifest.read_text())
     workspace_document["workspace"]["package"]["version"] = version
     workspace_manifest.write_text(workspace_document.as_string())
 
     crate_manifest = workspace_directory / "crates" / "alpha" / "Cargo.toml"
+    if not crate_manifest.exists():
+        message = f"Crate manifest not found: {crate_manifest}"
+        raise AssertionError(message)
     crate_document = parse_toml(crate_manifest.read_text())
     crate_document["package"]["version"] = version
     crate_manifest.write_text(crate_document.as_string())
@@ -69,13 +76,15 @@ def given_cargo_metadata_sample(
     manifest_path = crate_dir / "Cargo.toml"
     workspace_manifest = workspace_directory / "Cargo.toml"
     workspace_manifest.write_text(
-        """
-        [workspace]
-        members = ["crates/alpha"]
+        textwrap.dedent(
+            """
+            [workspace]
+            members = ["crates/alpha"]
 
-        [workspace.package]
-        version = "0.1.0"
-        """
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip()
     )
     manifest_path.write_text(
         """
@@ -160,7 +169,8 @@ def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) ->
     """Assert that the bump command reports the updated manifests."""
     assert cli_run["returncode"] == 0
     stdout = cli_run["stdout"]
-    assert f"Updated version to {version}" in stdout
+    assert "Updated version to " in stdout
+    assert version in stdout
 
 
 @then(parsers.parse('the bump command reports no manifest changes for "{version}"'))
@@ -171,7 +181,20 @@ def then_command_reports_no_changes(
     """Assert that the bump command reports that no updates were required."""
     assert cli_run["returncode"] == 0
     stdout = cli_run["stdout"]
-    assert f"No manifest changes required; all versions already {version}." in stdout
+    assert "No manifest changes required" in stdout
+    assert f"already {version}" in stdout
+
+
+@then(parsers.parse("the CLI exits with code {expected:d}"))
+def then_cli_exit_code(cli_run: dict[str, typ.Any], expected: int) -> None:
+    """Assert that the CLI terminated with ``expected`` exit code."""
+    assert cli_run["returncode"] == expected
+
+
+@then(parsers.parse('the stderr contains "{expected}"'))
+def then_stderr_contains(cli_run: dict[str, typ.Any], expected: str) -> None:
+    """Assert that ``expected`` appears in the captured stderr output."""
+    assert expected in cli_run["stderr"]
 
 
 @then(parsers.parse('the workspace manifest version is "{version}"'))

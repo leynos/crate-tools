@@ -275,18 +275,18 @@ lading bump <new_version> [--dry-run]
 ### Implementation notes (Step 2.1)
 
 - Manifest rewrites use `tomlkit` so comments and formatting remain intact. The
-  implementation updates both `[package]` and `[workspace.package]` sections in
-  the workspace manifest when present.
+  implementation updates both `[package]` and `[workspace.package]` sections
+  in the workspace manifest when present.
 - `bump.exclude` is respected when iterating workspace crates. Any crate name
   listed in the configuration keeps its existing `package.version` value during
   the update pass.
 - The command reports a concise summary (`Updated version to … in N
   manifest(s).`) so callers can assert success without inspecting the file
-  system. When no manifest requires changes the command reports a dedicated
+  system. When no manifest requires changes, the command reports a dedicated
   "No manifest changes required" message instead of rewriting files.
 - Version arguments are validated at the CLI layer before the workspace model
-  loads. Invalid formats raise a user-facing error without touching the file
-  system.
+  loads. Invalid formats raise a user-facing error without touching the
+  filesystem.
 - The `bump.doc_files` configuration knob has been removed until documentation
   rewriting arrives in Step 2.2 to avoid suggesting unsupported behaviour.
 
