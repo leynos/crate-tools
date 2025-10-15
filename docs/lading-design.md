@@ -215,7 +215,10 @@ workspace graph, containing:
 - `manifest_path`: The absolute path to the crate's `Cargo.toml`.
 - `publish`: A boolean indicating if the crate is intended for publication
   (derived from `package.publish` in `Cargo.toml`).
-- `dependencies`: A list of its dependencies within the workspace.
+- `dependencies`: A list of its dependencies within the workspace. Each entry
+  retains both the canonical crate name and the manifest key so that renamed
+  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched
+  back to their manifest entries when updating requirements.
 - `readme_is_workspace`: A boolean flag derived from checking if
   `package.readme.workspace` is `true`.
 

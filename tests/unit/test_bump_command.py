@@ -170,9 +170,24 @@ def test_run_updates_internal_dependency_versions(tmp_path: Path) -> None:
         publish=True,
         readme_is_workspace=False,
         dependencies=(
-            WorkspaceDependency(package_id="alpha-id", name="alpha", kind=None),
-            WorkspaceDependency(package_id="alpha-id", name="alpha", kind="dev"),
-            WorkspaceDependency(package_id="alpha-id", name="alpha", kind="build"),
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha",
+                kind=None,
+            ),
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha",
+                kind="dev",
+            ),
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha",
+                kind="build",
+            ),
         ),
     )
     workspace = WorkspaceGraph(
@@ -191,6 +206,76 @@ def test_run_updates_internal_dependency_versions(tmp_path: Path) -> None:
     build_entry = beta_document["build-dependencies"]["alpha"]
     assert build_entry["version"].value == "1.2.3"
     assert build_entry["path"].value == "../alpha"
+
+
+def test_run_updates_renamed_internal_dependency_versions(tmp_path: Path) -> None:
+    """Aliased workspace dependencies are updated using their manifest name."""
+    workspace_root = tmp_path
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    _write_workspace_manifest(workspace_root, ["crates/alpha", "crates/beta"])
+
+    alpha_dir = workspace_root / "crates" / "alpha"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    alpha_manifest = alpha_dir / "Cargo.toml"
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+
+    beta_dir = workspace_root / "crates" / "beta"
+    beta_dir.mkdir(parents=True, exist_ok=True)
+    beta_manifest = beta_dir / "Cargo.toml"
+    beta_manifest.write_text(
+        """
+        [package]
+        name = "beta"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha-core = { package = "alpha", version = "^0.1.0" }
+        """,
+        encoding="utf-8",
+    )
+
+    alpha_crate = WorkspaceCrate(
+        id="alpha-id",
+        name="alpha",
+        version="0.1.0",
+        manifest_path=alpha_manifest,
+        root_path=alpha_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+    beta_crate = WorkspaceCrate(
+        id="beta-id",
+        name="beta",
+        version="0.1.0",
+        manifest_path=beta_manifest,
+        root_path=beta_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha-core",
+                kind=None,
+            ),
+        ),
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=workspace_root,
+        crates=(alpha_crate, beta_crate),
+    )
+
+    configuration = _make_config()
+    bump.run(workspace_root, "2.3.4", configuration=configuration, workspace=workspace)
+
+    beta_document = parse_toml(beta_manifest.read_text(encoding="utf-8"))
+    dependency_entry = beta_document["dependencies"]["alpha-core"]
+    assert dependency_entry["version"].value == "^2.3.4"
+    assert dependency_entry["package"].value == "alpha"
 
 
 def test_run_normalises_workspace_root(
