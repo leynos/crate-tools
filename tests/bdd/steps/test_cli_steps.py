@@ -217,7 +217,7 @@ def _build_package_metadata(
     version: str,
     manifest_path: Path,
     dependencies: list[dict[str, str]] | None = None,
-) -> dict:
+) -> dict[str, typ.Any]:
     """Construct the minimal package metadata payload for ``cargo metadata``."""
     return {
         "name": name,
@@ -470,11 +470,7 @@ def then_dependency_requirement(
     assert requirement == expected
 
 
-@then(
-    parsers.parse(
-        'the dependency "{dependency_spec}" has requirement "{expected}"'
-    )
-)
+@then(parsers.parse('the dependency "{dependency_spec}" has requirement "{expected}"'))
 def _then_dependency_requirement_step(
     cli_run: dict[str, typ.Any],
     dependency_spec: str,
