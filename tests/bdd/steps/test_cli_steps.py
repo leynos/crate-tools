@@ -433,7 +433,7 @@ def _extract_dependency_requirement(entry: object) -> str:
     raise AssertionError(message)
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class DependencyCheck:
     """Specification for checking a dependency requirement."""
 

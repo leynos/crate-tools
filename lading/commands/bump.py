@@ -36,7 +36,7 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
     "build": "build-dependencies",
 }
 
-_NON_DIGIT_PREFIX = re.compile(r"^([^\d]*)")
+_NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
 
 def run(
@@ -324,7 +324,8 @@ def _write_atomic_text(manifest_path: Path, content: str) -> None:
     )
     try:
         if existing_mode is not None:
-            os.fchmod(fd, existing_mode)
+            with suppress(AttributeError):
+                os.fchmod(fd, existing_mode)  # not available on Windows
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
         Path(tmp_path).replace(manifest_path)

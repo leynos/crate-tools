@@ -216,9 +216,9 @@ workspace graph, containing:
 - `publish`: A boolean indicating if the crate is intended for publication
   (derived from `package.publish` in `Cargo.toml`).
 - `dependencies`: A list of its dependencies within the workspace. Each entry
-  retains both the canonical crate name and the manifest key so that renamed
+  retains both the canonical crate name and the manifest key, so renamed
   dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched
-  back to their manifest entries when updating requirements.
+  back to the correct manifest entry when updating requirements.
 - `readme_is_workspace`: A boolean flag derived from checking if
   `package.readme.workspace` is `true`.
 
@@ -268,7 +268,7 @@ lading bump <new_version> [--dry-run]
 
     - Introduce configuration-driven glob patterns for documentation files.
     - For each matching file, scan for TOML fenced code blocks (three backticks
-      - "toml").
+      with the language tag "toml").
     - Within each fence, parse the content and update the version of any
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
