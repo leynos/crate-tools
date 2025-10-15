@@ -72,9 +72,7 @@ def run(
         changed += 1
 
     for crate in workspace.crates:
-        if _update_crate_manifest(
-            crate, excluded, updated_crate_names, target_version
-        ):
+        if _update_crate_manifest(crate, excluded, updated_crate_names, target_version):
             changed += 1
 
     return _format_result_message(changed, target_version)
@@ -87,17 +85,12 @@ def _update_crate_manifest(
     target_version: str,
 ) -> bool:
     """Apply ``target_version`` to ``crate`` when it requires a manifest update."""
-    selectors: tuple[tuple[str, ...], ...] = (
-        () if crate.name in excluded else (("package",),)
-    )
-    dependency_sections = _dependency_sections_for_crate(
-        crate, updated_crate_names
-    )
-    if not selectors and not dependency_sections:
+    if crate.name in excluded:
         return False
+    dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
     return _update_manifest(
         crate.manifest_path,
-        selectors,
+        (("package",),),
         target_version,
         dependency_sections=dependency_sections,
     )
@@ -106,9 +99,7 @@ def _update_crate_manifest(
 def _format_result_message(changed: int, target_version: str) -> str:
     """Summarise the bump outcome for CLI presentation."""
     if changed == 0:
-        return (
-            f"No manifest changes required; all versions already {target_version}."
-        )
+        return f"No manifest changes required; all versions already {target_version}."
     return f"Updated version to {target_version} in {changed} manifest(s)."
 
 

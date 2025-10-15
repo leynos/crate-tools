@@ -318,6 +318,108 @@ def test_run_reports_when_versions_already_match(tmp_path: Path) -> None:
     assert message == "No manifest changes required; all versions already 0.1.0."
 
 
+def test_update_crate_manifest_skips_excluded_crate(tmp_path: Path) -> None:
+    """Excluded crates are not modified, even when dependencies could update."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        """
+        [package]
+        name = "beta"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha = "0.1.0"
+        """,
+        encoding="utf-8",
+    )
+    crate = WorkspaceCrate(
+        id="beta-id",
+        name="beta",
+        version="0.1.0",
+        manifest_path=manifest_path,
+        root_path=manifest_path.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha",
+                kind=None,
+            ),
+        ),
+    )
+
+    changed = bump._update_crate_manifest(
+        crate,
+        {"beta"},
+        {"alpha"},
+        "1.2.3",
+    )
+
+    assert changed is False
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    assert document["package"]["version"] == "0.1.0"
+    assert document["dependencies"]["alpha"].value == "0.1.0"
+
+
+def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) -> None:
+    """Crate manifests receive the new version and dependency updates."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        """
+        [package]
+        name = "beta"
+        version = "0.1.0"
+
+        [dependencies]
+        alpha = "^0.1.0"
+        """,
+        encoding="utf-8",
+    )
+    crate = WorkspaceCrate(
+        id="beta-id",
+        name="beta",
+        version="0.1.0",
+        manifest_path=manifest_path,
+        root_path=manifest_path.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(
+                package_id="alpha-id",
+                name="alpha",
+                manifest_name="alpha",
+                kind=None,
+            ),
+        ),
+    )
+
+    changed = bump._update_crate_manifest(
+        crate,
+        set(),
+        {"alpha"},
+        "1.2.3",
+    )
+
+    assert changed is True
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    assert document["package"]["version"] == "1.2.3"
+    assert document["dependencies"]["alpha"].value == "^1.2.3"
+
+
+def test_format_result_message_handles_changes() -> None:
+    """The formatted result message reflects the number of updated manifests."""
+    assert (
+        bump._format_result_message(0, "1.2.3")
+        == "No manifest changes required; all versions already 1.2.3."
+    )
+    assert (
+        bump._format_result_message(2, "4.5.6")
+        == "Updated version to 4.5.6 in 2 manifest(s)."
+    )
+
+
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     """Applying a new version persists changes to disk."""
     manifest_path = tmp_path / "Cargo.toml"
