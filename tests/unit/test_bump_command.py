@@ -315,8 +315,10 @@ def test_run_reports_when_versions_already_match(tmp_path: Path) -> None:
     assert message == "No manifest changes required; all versions already 0.1.0."
 
 
-def test_update_crate_manifest_skips_excluded_crate(tmp_path: Path) -> None:
-    """Excluded crates are not modified, even when dependencies could update."""
+def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
+    tmp_path: Path,
+) -> None:
+    """Excluded crates keep their version while dependency requirements refresh."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         """
@@ -354,10 +356,10 @@ def test_update_crate_manifest_skips_excluded_crate(tmp_path: Path) -> None:
         "1.2.3",
     )
 
-    assert changed is False
+    assert changed is True
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == "0.1.0"
-    assert document["dependencies"]["alpha"].value == "0.1.0"
+    assert document["dependencies"]["alpha"].value == "1.2.3"
 
 
 def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) -> None:

@@ -84,13 +84,17 @@ def _update_crate_manifest(
     updated_crate_names: typ.Collection[str],
     target_version: str,
 ) -> bool:
-    """Apply ``target_version`` to ``crate`` when it requires a manifest update."""
-    if crate.name in excluded:
-        return False
+    """Apply updates for ``crate`` while respecting exclusion rules."""
     dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
+    if crate.name in excluded:
+        selectors: tuple[tuple[str, ...], ...] = ()
+    else:
+        selectors = (("package",),)
+    if not selectors and not dependency_sections:
+        return False
     return _update_manifest(
         crate.manifest_path,
-        (("package",),),
+        selectors,
         target_version,
         dependency_sections=dependency_sections,
     )
