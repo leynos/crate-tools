@@ -25,9 +25,9 @@ Feature: Lading CLI scaffolding
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with internal dependency requirements
     When I invoke lading bump 1.2.3 with that workspace
-    Then the crate "beta" dependency "alpha" in "dependencies" has requirement "^1.2.3"
-    And the crate "beta" dependency "alpha" in "dev-dependencies" has requirement "~1.2.3"
-    And the crate "beta" dependency "alpha" in "build-dependencies" has requirement "1.2.3"
+    Then the dependency "beta:alpha@dependencies" has requirement "^1.2.3"
+    And the dependency "beta:alpha@dev-dependencies" has requirement "~1.2.3"
+    And the dependency "beta:alpha@build-dependencies" has requirement "1.2.3"
 
   Scenario: Bumping workspace versions when already up to date
     Given a workspace directory with configuration

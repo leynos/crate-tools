@@ -472,17 +472,35 @@ def then_dependency_requirement(
 
 @then(
     parsers.parse(
-        'the crate "{crate_name}" dependency "{dependency_name}" in "{section}" '
-        'has requirement "{expected}"'
+        'the dependency "{dependency_spec}" has requirement "{expected}"'
     )
 )
 def _then_dependency_requirement_step(
     cli_run: dict[str, typ.Any],
-    crate_name: str,
-    dependency_name: str,
-    section: str,
+    dependency_spec: str,
     expected: str,
 ) -> None:
+    """Assert that an internal dependency requirement reflects the new version.
+
+    The dependency_spec should be in the format: "crate_name:dependency_name@section"
+    Example: "beta:alpha@dependencies"
+    """
+    parts = dependency_spec.split(":", maxsplit=1)
+    if len(parts) != 2:
+        message = (
+            "Dependency specification must contain exactly one ':' separator: "
+            f"{dependency_spec!r}"
+        )
+        raise AssertionError(message)
+    crate_name, dep_segment = parts
+    dep_and_section = dep_segment.split("@", maxsplit=1)
+    if len(dep_and_section) != 2:
+        message = (
+            "Dependency specification must contain exactly one '@' separator: "
+            f"{dependency_spec!r}"
+        )
+        raise AssertionError(message)
+    dependency_name, section = dep_and_section
     then_dependency_requirement(
         cli_run,
         DependencyCheck(
