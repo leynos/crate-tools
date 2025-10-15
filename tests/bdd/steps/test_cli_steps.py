@@ -184,6 +184,50 @@ def given_cargo_metadata_two_crates(
     )
 
 
+def _create_test_crate(
+    workspace_dir: Path,
+    crate_name: str,
+    version: str,
+    dependencies_toml: str = "",
+) -> Path:
+    """Create a crate manifest under ``workspace_dir`` for behavioural fixtures."""
+    crate_dir = workspace_dir / "crates" / crate_name
+    crate_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = crate_dir / "Cargo.toml"
+
+    sections = [
+        textwrap.dedent(
+            f"""
+            [package]
+            name = "{crate_name}"
+            version = "{version}"
+            """
+        ).strip()
+    ]
+    if dependencies_toml:
+        sections.append(textwrap.dedent(dependencies_toml).strip())
+
+    manifest_path.write_text("\n\n".join(sections) + "\n", encoding="utf-8")
+    return manifest_path
+
+
+def _build_package_metadata(
+    name: str,
+    version: str,
+    manifest_path: Path,
+    dependencies: list[dict[str, str]] | None = None,
+) -> dict:
+    """Construct the minimal package metadata payload for ``cargo metadata``."""
+    return {
+        "name": name,
+        "version": version,
+        "id": f"{name}-id",
+        "manifest_path": str(manifest_path),
+        "dependencies": [] if dependencies is None else dependencies,
+        "publish": None,
+    }
+
+
 @given(
     "cargo metadata describes a workspace with internal dependency requirements",
 )
@@ -194,43 +238,20 @@ def given_cargo_metadata_with_internal_dependencies(
 ) -> None:
     """Stub metadata for a workspace where beta depends on alpha across sections."""
     install_cargo_stub(cmd_mox, monkeypatch)
+    alpha_manifest = _create_test_crate(workspace_directory, "alpha", "0.1.0")
+    beta_dependencies = """
+        [dependencies]
+        alpha = "^0.1.0"
 
-    alpha_dir = workspace_directory / "crates" / "alpha"
-    alpha_dir.mkdir(parents=True, exist_ok=True)
-    alpha_manifest = alpha_dir / "Cargo.toml"
-    alpha_manifest.write_text(
-        textwrap.dedent(
-            """
-            [package]
-            name = "alpha"
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
+        [dev-dependencies]
+        alpha = { version = "~0.1.0", path = "../alpha" }
 
-    beta_dir = workspace_directory / "crates" / "beta"
-    beta_dir.mkdir(parents=True, exist_ok=True)
-    beta_manifest = beta_dir / "Cargo.toml"
-    beta_manifest.write_text(
-        textwrap.dedent(
-            """
-            [package]
-            name = "beta"
-            version = "0.1.0"
-
-            [dependencies]
-            alpha = "^0.1.0"
-
-            [dev-dependencies]
-            alpha = { version = "~0.1.0", path = "../alpha" }
-
-            [build-dependencies.alpha]
-            version = "0.1.0"
-            path = "../alpha"
-            """
-        ).lstrip(),
-        encoding="utf-8",
+        [build-dependencies.alpha]
+        version = "0.1.0"
+        path = "../alpha"
+    """
+    beta_manifest = _create_test_crate(
+        workspace_directory, "beta", "0.1.0", dependencies_toml=beta_dependencies
     )
 
     workspace_manifest = workspace_directory / "Cargo.toml"
@@ -247,29 +268,18 @@ def given_cargo_metadata_with_internal_dependencies(
         encoding="utf-8",
     )
 
+    beta_dependency_entries = [
+        {"name": "alpha", "package": "alpha-id"},
+        {"name": "alpha", "package": "alpha-id", "kind": "dev"},
+        {"name": "alpha", "package": "alpha-id", "kind": "build"},
+    ]
     payload = {
         "workspace_root": str(workspace_directory),
         "packages": [
-            {
-                "name": "alpha",
-                "version": "0.1.0",
-                "id": "alpha-id",
-                "manifest_path": str(alpha_manifest),
-                "dependencies": [],
-                "publish": None,
-            },
-            {
-                "name": "beta",
-                "version": "0.1.0",
-                "id": "beta-id",
-                "manifest_path": str(beta_manifest),
-                "dependencies": [
-                    {"name": "alpha", "package": "alpha-id"},
-                    {"name": "alpha", "package": "alpha-id", "kind": "dev"},
-                    {"name": "alpha", "package": "alpha-id", "kind": "build"},
-                ],
-                "publish": None,
-            },
+            _build_package_metadata("alpha", "0.1.0", alpha_manifest),
+            _build_package_metadata(
+                "beta", "0.1.0", beta_manifest, dependencies=beta_dependency_entries
+            ),
         ],
         "workspace_members": ["alpha-id", "beta-id"],
     }
