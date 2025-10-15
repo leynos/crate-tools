@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import json
 import subprocess
 import sys
@@ -432,20 +433,25 @@ def _extract_dependency_requirement(entry: object) -> str:
     raise AssertionError(message)
 
 
-@then(
-    parsers.parse(
-        'the crate "{crate_name}" dependency "{dependency_name}" in "{section}" '
-        'has requirement "{expected}"'
-    )
-)
+@dc.dataclass(frozen=True)
+class DependencyCheck:
+    """Specification for checking a dependency requirement."""
+
+    crate_name: str
+    dependency_name: str
+    section: str
+    expected_requirement: str
+
+
 def then_dependency_requirement(
     cli_run: dict[str, typ.Any],
-    crate_name: str,
-    dependency_name: str,
-    section: str,
-    expected: str,
+    check: DependencyCheck,
 ) -> None:
     """Assert that an internal dependency requirement reflects the new version."""
+    crate_name = check.crate_name
+    dependency_name = check.dependency_name
+    section = check.section
+    expected = check.expected_requirement
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     try:
@@ -462,6 +468,30 @@ def then_dependency_requirement(
         raise AssertionError(message)
     requirement = _extract_dependency_requirement(entry)
     assert requirement == expected
+
+
+@then(
+    parsers.parse(
+        'the crate "{crate_name}" dependency "{dependency_name}" in "{section}" '
+        'has requirement "{expected}"'
+    )
+)
+def _then_dependency_requirement_step(
+    cli_run: dict[str, typ.Any],
+    crate_name: str,
+    dependency_name: str,
+    section: str,
+    expected: str,
+) -> None:
+    then_dependency_requirement(
+        cli_run,
+        DependencyCheck(
+            crate_name=crate_name,
+            dependency_name=dependency_name,
+            section=section,
+            expected_requirement=expected,
+        ),
+    )
 
 
 @then("the publish command reports the workspace path, crate count, and strip patches")
