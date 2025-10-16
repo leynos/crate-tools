@@ -21,6 +21,10 @@ from lading.workspace import (
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
+from tests.helpers.workspace_metadata import (
+    _create_test_manifest,
+    _create_test_package_metadata,
+)
 
 _METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
     "workspace_root": "./",
@@ -183,35 +187,6 @@ def test_ensure_command_raises_on_missing_executable(
         metadata_module._ensure_command()
 
 
-def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
-    """Write a manifest for ``crate_name`` beneath ``workspace_root``."""
-
-    manifest_dir = workspace_root / crate_name
-    manifest_dir.mkdir(parents=True)
-    manifest_path = manifest_dir / "Cargo.toml"
-    manifest_path.write_text(textwrap.dedent(content).strip())
-    return manifest_path
-
-
-def _build_test_package(
-    name: str,
-    version: str,
-    manifest_path: Path,
-    dependencies: list[dict[str, str]] | None = None,
-    publish: list[str] | None = None,
-) -> dict[str, typ.Any]:
-    """Create package metadata with predictable identifiers for tests."""
-
-    return {
-        "name": name,
-        "version": version,
-        "id": f"{name}-id",
-        "manifest_path": str(manifest_path),
-        "dependencies": dependencies if dependencies is not None else [],
-        "publish": publish,
-    }
-
-
 def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     """Convert metadata payloads into strongly typed workspace models."""
     workspace_root = tmp_path
@@ -241,7 +216,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     metadata = {
         "workspace_root": str(workspace_root),
         "packages": [
-            _build_test_package(
+            _create_test_package_metadata(
                 "crate",
                 "0.1.0",
                 crate_manifest,
@@ -251,11 +226,11 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
                 ],
                 publish=[],
             ),
-            _build_test_package(
+            _create_test_package_metadata(
                 "helper",
                 "0.1.0",
                 helper_manifest,
-                publish=None,
+                publish=["crates-io"],
             ),
         ],
         "workspace_members": ["crate-id", "helper-id"],
