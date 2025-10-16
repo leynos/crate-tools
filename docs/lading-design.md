@@ -215,7 +215,10 @@ workspace graph, containing:
 - `manifest_path`: The absolute path to the crate's `Cargo.toml`.
 - `publish`: A boolean indicating if the crate is intended for publication
   (derived from `package.publish` in `Cargo.toml`).
-- `dependencies`: A list of its dependencies within the workspace.
+- `dependencies`: A list of its dependencies within the workspace. Each entry
+  retains both the canonical crate name and the manifest key, so renamed
+  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched
+  back to the correct manifest entry when updating requirements.
 - `readme_is_workspace`: A boolean flag derived from checking if
   `package.readme.workspace` is `true`.
 
@@ -261,10 +264,11 @@ lading bump <new_version> [--dry-run]
       part of the versioning workflow. The `bump` command will validate that
       this is possible.
 
-5. **Update Documentation Files:** *(deferred to Step 2.2)*
+5. **Update Documentation Files:** _(deferred to Step 2.2)_
 
     - Introduce configuration-driven glob patterns for documentation files.
-    - For each matching file, scan for TOML fenced code blocks (three backticks + "toml").
+    - For each matching file, scan for TOML fenced code blocks (three backticks
+      with the language tag "toml").
     - Within each fence, parse the content and update the version of any
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
@@ -275,15 +279,25 @@ lading bump <new_version> [--dry-run]
 ### Implementation notes (Step 2.1)
 
 - Manifest rewrites use `tomlkit` so comments and formatting remain intact. The
-  implementation updates both `[package]` and `[workspace.package]` sections
-  in the workspace manifest when present.
+  implementation updates both `[package]` and `[workspace.package]` sections in
+  the workspace manifest when present.
 - `bump.exclude` is respected when iterating workspace crates. Any crate name
   listed in the configuration keeps its existing `package.version` value during
   the update pass.
-- The command reports a concise summary (`Updated version to … in N manifest(s).`)
-  so callers can assert success without inspecting the filesystem. When no
-  manifest requires changes, it reports a dedicated "No manifest changes required"
-  message instead of rewriting files.
+- Dependency requirements referencing workspace members are rewritten using the
+  workspace graph. For each crate we map dependencies to their
+  `[dependencies]`, `[dev-dependencies]`, or `[build-dependencies]` sections
+  and update the requirement string only when the target crate's version
+  changes. Leading operators such as `^` and `~` are preserved so caret and
+  tilde semantics continue to apply.
+- Crates excluded via `bump.exclude` still have their dependency requirements
+  refreshed when they point at bumped members. This keeps the workspace graph
+  consistent without forcing the excluded crate to change its own version.
+- The command reports a concise summary
+  (`Updated version to … in N manifest(s).`) so callers can assert success
+  without inspecting the filesystem. When no manifest requires changes, it
+  reports a dedicated "No manifest changes required" message instead of
+  rewriting files.
 - Version arguments are validated at the CLI layer before the workspace model
   loads. Invalid formats raise a user-facing error without touching the
   filesystem, while values may include optional pre-release and build metadata.

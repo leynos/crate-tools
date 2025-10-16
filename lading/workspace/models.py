@@ -24,6 +24,7 @@ class WorkspaceDependency(msgspec.Struct, frozen=True, kw_only=True):
 
     package_id: str
     name: str
+    manifest_name: str
     kind: typ.Literal["normal", "dev", "build"] | None = None
 
 
@@ -219,10 +220,15 @@ def _as_workspace_dependency(
     if target is None:
         return None
     target_id, target_name = target
+    manifest_name = _expect_string(
+        dependency.get("name"),
+        f"dependency {target_id!r} name",
+    )
     kind_literal = _validate_dependency_kind(dependency)
     return WorkspaceDependency(
         package_id=target_id,
         name=target_name,
+        manifest_name=manifest_name,
         kind=kind_literal,
     )
 

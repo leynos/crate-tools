@@ -94,7 +94,7 @@ workspace and member crate manifests.
     `lading bump 1.2.3` on a fixture workspace results in all `package.version`
     fields being updated to `1.2.3`.
 
-- [ ] **Update Internal Dependency Versions:**
+- [x] **Update Internal Dependency Versions:**
 
   - **Outcome:** The command updates the version specifiers for all
     dependencies that are internal to the workspace.

@@ -31,7 +31,14 @@ def _make_workspace(root: Path) -> WorkspaceGraph:
         root_path=crate_path,
         publish=True,
         readme_is_workspace=False,
-        dependencies=(WorkspaceDependency(package_id="dep-id", name="dep", kind=None),),
+        dependencies=(
+            WorkspaceDependency(
+                package_id="dep-id",
+                name="dep",
+                manifest_name="dep",
+                kind=None,
+            ),
+        ),
     )
     dependency = WorkspaceCrate(
         id="dep-id",

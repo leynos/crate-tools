@@ -249,7 +249,12 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     assert crate.publish is False
     assert crate.readme_is_workspace is True
     assert crate.dependencies == (
-        WorkspaceDependency(package_id="helper-id", name="helper", kind="dev"),
+        WorkspaceDependency(
+            package_id="helper-id",
+            name="helper",
+            manifest_name="helper",
+            kind="dev",
+        ),
     )
     helper = crates["helper"]
     assert helper.publish is True
