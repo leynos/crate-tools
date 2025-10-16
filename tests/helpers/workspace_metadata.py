@@ -41,7 +41,3 @@ def _build_test_package(
         "dependencies": kwargs.get("dependencies", []),
         "publish": kwargs.get("publish"),
     }
-
-
-# Backwards compatibility for older imports within the test suite.
-_create_test_package_metadata = _build_test_package
