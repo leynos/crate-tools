@@ -258,12 +258,12 @@ def _value_as_string(value: object) -> str | None:
 def _compose_requirement(existing: str, target_version: str) -> str:
     """Prefix ``target_version`` with any non-numeric operator from ``existing``."""
     match = _NON_DIGIT_PREFIX.match(existing)
-    if match is None:
+    if not match:
         return target_version
     prefix = match.group(1)
-    if prefix == existing:
-        prefix = ""
-    return f"{prefix}{target_version}" if prefix else target_version
+    if not prefix or prefix == existing:
+        return target_version
+    return f"{prefix}{target_version}"
 
 
 def _parse_manifest(manifest_path: Path) -> TOMLDocument:
