@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import textwrap
 import typing as typ
-from pathlib import Path
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
     """Write a manifest for ``crate_name`` beneath ``workspace_root``."""
-
     manifest_dir = workspace_root / crate_name
     manifest_dir.mkdir(parents=True)
     manifest_path = manifest_dir / "Cargo.toml"
@@ -21,7 +22,7 @@ def _build_test_package(
     name: str,
     version: str,
     manifest_path: Path,
-    **kwargs: typ.Any,
+    **kwargs: object,
 ) -> dict[str, typ.Any]:
     """Create package metadata with predictable identifiers for tests.
 
@@ -30,8 +31,8 @@ def _build_test_package(
         version: Package version
         manifest_path: Path to the manifest file
         **kwargs: Optional fields (dependencies, publish, etc.)
-    """
 
+    """
     return {
         "name": name,
         "version": version,
