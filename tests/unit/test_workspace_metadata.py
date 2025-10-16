@@ -21,10 +21,7 @@ from lading.workspace import (
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
-from tests.helpers.workspace_metadata import (
-    _create_test_manifest,
-    _create_test_package_metadata,
-)
+from tests.helpers.workspace_metadata import _build_test_package, _create_test_manifest
 
 _METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
     "workspace_root": "./",
@@ -216,7 +213,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     metadata = {
         "workspace_root": str(workspace_root),
         "packages": [
-            _create_test_package_metadata(
+            _build_test_package(
                 "crate",
                 "0.1.0",
                 crate_manifest,
@@ -226,7 +223,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
                 ],
                 publish=[],
             ),
-            _create_test_package_metadata(
+            _build_test_package(
                 "helper",
                 "0.1.0",
                 helper_manifest,

@@ -17,22 +17,30 @@ def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -
     return manifest_path
 
 
-def _create_test_package_metadata(
+def _build_test_package(
     name: str,
     version: str,
     manifest_path: Path,
-    dependencies: list[dict[str, str]] | None = None,
-    publish: list[str] | None = None,
+    **kwargs: typ.Any,
 ) -> dict[str, typ.Any]:
-    """Create package metadata with predictable identifiers for tests."""
+    """Create package metadata with predictable identifiers for tests.
 
-    normalized_dependencies = list(dependencies) if dependencies is not None else []
-    normalized_publish = [] if publish is None else list(publish)
+    Args:
+        name: Package name
+        version: Package version
+        manifest_path: Path to the manifest file
+        **kwargs: Optional fields (dependencies, publish, etc.)
+    """
+
     return {
         "name": name,
         "version": version,
         "id": f"{name}-id",
         "manifest_path": str(manifest_path),
-        "dependencies": normalized_dependencies,
-        "publish": normalized_publish,
+        "dependencies": kwargs.get("dependencies", []),
+        "publish": kwargs.get("publish"),
     }
+
+
+# Backwards compatibility for older imports within the test suite.
+_create_test_package_metadata = _build_test_package
