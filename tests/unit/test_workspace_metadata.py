@@ -183,58 +183,80 @@ def test_ensure_command_raises_on_missing_executable(
         metadata_module._ensure_command()
 
 
+def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
+    """Write a manifest for ``crate_name`` beneath ``workspace_root``."""
+
+    manifest_dir = workspace_root / crate_name
+    manifest_dir.mkdir(parents=True)
+    manifest_path = manifest_dir / "Cargo.toml"
+    manifest_path.write_text(textwrap.dedent(content).strip())
+    return manifest_path
+
+
+def _build_test_package(
+    name: str,
+    version: str,
+    manifest_path: Path,
+    dependencies: list[dict[str, str]] | None = None,
+    publish: list[str] | None = None,
+) -> dict[str, typ.Any]:
+    """Create package metadata with predictable identifiers for tests."""
+
+    return {
+        "name": name,
+        "version": version,
+        "id": f"{name}-id",
+        "manifest_path": str(manifest_path),
+        "dependencies": dependencies if dependencies is not None else [],
+        "publish": publish,
+    }
+
+
 def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     """Convert metadata payloads into strongly typed workspace models."""
     workspace_root = tmp_path
-    crate_manifest = workspace_root / "crate" / "Cargo.toml"
-    crate_manifest.parent.mkdir(parents=True)
-    crate_manifest.write_text(
-        textwrap.dedent(
-            """
-            [package]
-            name = "crate"
-            version = "0.1.0"
-            readme.workspace = true
+    crate_manifest = _create_test_manifest(
+        workspace_root,
+        "crate",
+        """
+        [package]
+        name = "crate"
+        version = "0.1.0"
+        readme.workspace = true
 
-            [dependencies]
-            helper = { path = "../helper", version = "0.1.0" }
-            """
-        ).strip()
+        [dependencies]
+        helper = { path = "../helper", version = "0.1.0" }
+        """,
     )
-    helper_manifest = workspace_root / "helper" / "Cargo.toml"
-    helper_manifest.parent.mkdir(parents=True)
-    helper_manifest.write_text(
-        textwrap.dedent(
-            """
-            [package]
-            name = "helper"
-            version = "0.1.0"
-            readme = "README.md"
-            """
-        ).strip()
+    helper_manifest = _create_test_manifest(
+        workspace_root,
+        "helper",
+        """
+        [package]
+        name = "helper"
+        version = "0.1.0"
+        readme = "README.md"
+        """,
     )
     metadata = {
         "workspace_root": str(workspace_root),
         "packages": [
-            {
-                "name": "crate",
-                "version": "0.1.0",
-                "id": "crate-id",
-                "manifest_path": str(crate_manifest),
-                "dependencies": [
+            _build_test_package(
+                "crate",
+                "0.1.0",
+                crate_manifest,
+                dependencies=[
                     {"name": "helper", "package": "helper-id", "kind": "dev"},
                     {"name": "external", "package": "external-id"},
                 ],
-                "publish": [],
-            },
-            {
-                "name": "helper",
-                "version": "0.1.0",
-                "id": "helper-id",
-                "manifest_path": str(helper_manifest),
-                "dependencies": [],
-                "publish": None,
-            },
+                publish=[],
+            ),
+            _build_test_package(
+                "helper",
+                "0.1.0",
+                helper_manifest,
+                publish=None,
+            ),
         ],
         "workspace_members": ["crate-id", "helper-id"],
     }
