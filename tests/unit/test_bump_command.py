@@ -140,6 +140,85 @@ def _make_config(**kwargs: str | tuple[str, ...]) -> config_module.LadingConfig:
     return config_module.LadingConfig(bump=bump_config)
 
 
+def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
+    """Create the alpha crate and return its workspace representation."""
+    alpha_dir = workspace_root / "crates" / "alpha"
+    alpha_dir.mkdir(parents=True, exist_ok=True)
+    alpha_manifest = alpha_dir / "Cargo.toml"
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    return WorkspaceCrate(
+        id="alpha-id",
+        name="alpha",
+        version="0.1.0",
+        manifest_path=alpha_manifest,
+        root_path=alpha_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+
+
+def _create_beta_crate_with_dependencies(
+    workspace_root: Path, alpha_id: str
+) -> WorkspaceCrate:
+    """Create the beta crate with dependency entries referencing alpha."""
+    beta_dir = workspace_root / "crates" / "beta"
+    beta_dir.mkdir(parents=True, exist_ok=True)
+    beta_manifest = beta_dir / "Cargo.toml"
+    beta_manifest.write_text(
+        textwrap.dedent(
+            """
+            [package]
+            name = "beta"
+            version = "0.1.0"
+
+            [dependencies]
+            alpha = "^0.1.0"
+
+            [dev-dependencies]
+            alpha = { version = "~0.1.0", path = "../alpha" }
+
+            [build-dependencies.alpha]
+            version = "0.1.0"
+            path = "../alpha"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    return WorkspaceCrate(
+        id="beta-id",
+        name="beta",
+        version="0.1.0",
+        manifest_path=beta_manifest,
+        root_path=beta_dir,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(
+            WorkspaceDependency(
+                package_id=alpha_id,
+                name="alpha",
+                manifest_name="alpha",
+                kind=None,
+            ),
+            WorkspaceDependency(
+                package_id=alpha_id,
+                name="alpha",
+                manifest_name="alpha",
+                kind="dev",
+            ),
+            WorkspaceDependency(
+                package_id=alpha_id,
+                name="alpha",
+                manifest_name="alpha",
+                kind="build",
+            ),
+        ),
+    )
+
+
 def test_run_updates_workspace_and_members(tmp_path: Path) -> None:
     """`bump.run` updates the workspace and member manifest versions."""
     workspace = _make_workspace(tmp_path)
@@ -186,52 +265,23 @@ def test_run_skips_excluded_crates(tmp_path: Path) -> None:
 
 def test_run_updates_internal_dependency_versions(tmp_path: Path) -> None:
     """Internal dependency requirements are updated across dependency sections."""
-    workspace, manifests = _build_workspace_with_internal_deps(
+    alpha_crate = _create_alpha_crate(tmp_path)
+    beta_crate = _create_beta_crate_with_dependencies(tmp_path, alpha_crate.id)
+    _write_workspace_manifest(
         tmp_path,
-        specs=(
-            _CrateSpec(name="alpha"),
-            _CrateSpec(
-                name="beta",
-                manifest_extra="""
-                [dependencies]
-                alpha = "^0.1.0"
-
-                [dev-dependencies]
-                alpha = { version = "~0.1.0", path = "../alpha" }
-
-                [build-dependencies.alpha]
-                version = "0.1.0"
-                path = "../alpha"
-                """,
-                dependencies=(
-                    WorkspaceDependency(
-                        package_id="alpha-id",
-                        name="alpha",
-                        manifest_name="alpha",
-                        kind=None,
-                    ),
-                    WorkspaceDependency(
-                        package_id="alpha-id",
-                        name="alpha",
-                        manifest_name="alpha",
-                        kind="dev",
-                    ),
-                    WorkspaceDependency(
-                        package_id="alpha-id",
-                        name="alpha",
-                        manifest_name="alpha",
-                        kind="build",
-                    ),
-                ),
-            ),
-        ),
+        [
+            "crates/alpha",
+            "crates/beta",
+        ],
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=tmp_path, crates=(alpha_crate, beta_crate)
     )
 
     configuration = _make_config()
     bump.run(tmp_path, "1.2.3", configuration=configuration, workspace=workspace)
 
-    beta_manifest = manifests["beta"]
-    beta_document = parse_toml(beta_manifest.read_text(encoding="utf-8"))
+    beta_document = parse_toml(beta_crate.manifest_path.read_text(encoding="utf-8"))
     assert beta_document["dependencies"]["alpha"].value == "^1.2.3"
     dev_entry = beta_document["dev-dependencies"]["alpha"]
     assert dev_entry["version"].value == "~1.2.3"
