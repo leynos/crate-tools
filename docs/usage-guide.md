@@ -89,11 +89,24 @@ Running the command updates:
   preserved, and other inline options (for example `path = "../crate"`) remain
   untouched.
 
-`lading` prints a short summary, for example:
-`Updated version to 1.2.3 in 3 manifest(s).` This lets release automation
-assert the change without parsing files directly. When every manifest already
-records the requested version, the CLI instead reports: `No manifest changes
-required; all versions already 1.2.3.`
+`lading` prints a short summary that lists every manifest it touched. For
+example:
+
+```text
+Updated version to 1.2.3 in 3 manifest(s):
+- Cargo.toml
+- crates/alpha/Cargo.toml
+- crates/beta/Cargo.toml
+```
+
+This lets release automation assert the change without parsing files directly.
+When every manifest already records the requested version, the CLI instead
+reports: `No manifest changes required; all versions already 1.2.3.`
+
+Pass `--dry-run` to preview the same summary without writing to disk. The
+output uses a "Dry run" prefix but lists the manifests exactly as a live run
+would, making it easy to validate the planned changes while leaving files
+untouched.
 
 ### `publish`
 

@@ -226,7 +226,12 @@ def test_run_updates_workspace_and_members(tmp_path: Path) -> None:
     message = bump.run(
         tmp_path, "1.2.3", configuration=configuration, workspace=workspace
     )
-    assert message == "Updated version to 1.2.3 in 3 manifest(s)."
+    assert message.splitlines() == [
+        "Updated version to 1.2.3 in 3 manifest(s):",
+        "- Cargo.toml",
+        "- crates/alpha/Cargo.toml",
+        "- crates/beta/Cargo.toml",
+    ]
     assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "1.2.3"
     for crate in workspace.crates:
         assert _load_version(crate.manifest_path, ("package",)) == "1.2.3"
@@ -365,6 +370,53 @@ def test_run_reports_when_versions_already_match(tmp_path: Path) -> None:
     assert message == "No manifest changes required; all versions already 0.1.0."
 
 
+def test_run_dry_run_reports_changes_without_modifying_files(tmp_path: Path) -> None:
+    """Dry-running the command reports planned changes without touching manifests."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
+    manifest_paths = [
+        tmp_path / "Cargo.toml",
+        *[crate.manifest_path for crate in workspace.crates],
+    ]
+    original_contents = {
+        path: path.read_text(encoding="utf-8") for path in manifest_paths
+    }
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        configuration=configuration,
+        workspace=workspace,
+        dry_run=True,
+    )
+
+    assert message.splitlines() == [
+        "Dry run; would update version to 1.2.3 in 3 manifest(s):",
+        "- Cargo.toml",
+        "- crates/alpha/Cargo.toml",
+        "- crates/beta/Cargo.toml",
+    ]
+    for path in manifest_paths:
+        assert path.read_text(encoding="utf-8") == original_contents[path]
+
+
+def test_run_dry_run_reports_no_changes_when_versions_match(tmp_path: Path) -> None:
+    """Dry run still reports when no manifest updates are necessary."""
+    workspace = _make_workspace(tmp_path)
+    configuration = _make_config()
+    message = bump.run(
+        tmp_path,
+        "0.1.0",
+        configuration=configuration,
+        workspace=workspace,
+        dry_run=True,
+    )
+
+    assert (
+        message == "Dry run; no manifest changes required; all versions already 0.1.0."
+    )
+
+
 def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
     tmp_path: Path,
 ) -> None:
@@ -457,16 +509,39 @@ def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) 
     assert document["dependencies"]["alpha"].value == "^1.2.3"
 
 
-def test_format_result_message_handles_changes() -> None:
-    """The formatted result message reflects the number of updated manifests."""
+def test_format_result_message_handles_changes(tmp_path: Path) -> None:
+    """The formatted result message reflects manifest counts and paths."""
+    workspace_root = tmp_path
+    manifest_paths = [
+        workspace_root / "Cargo.toml",
+        workspace_root / "member" / "Cargo.toml",
+    ]
     assert (
-        bump._format_result_message(0, "1.2.3")
+        bump._format_result_message(
+            [], "1.2.3", dry_run=False, workspace_root=workspace_root
+        )
         == "No manifest changes required; all versions already 1.2.3."
     )
-    assert (
-        bump._format_result_message(2, "4.5.6")
-        == "Updated version to 4.5.6 in 2 manifest(s)."
-    )
+    assert bump._format_result_message(
+        manifest_paths,
+        "4.5.6",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 4.5.6 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+    ]
+    assert bump._format_result_message(
+        manifest_paths,
+        "4.5.6",
+        dry_run=True,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Dry run; would update version to 4.5.6 in 2 manifest(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+    ]
 
 
 def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
