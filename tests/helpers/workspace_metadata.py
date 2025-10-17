@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+__all__ = ["_build_test_package", "_create_test_manifest"]
+
 import textwrap
 import typing as typ
 
