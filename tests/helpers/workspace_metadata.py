@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__all__ = ["_build_test_package", "_create_test_manifest"]
+__all__ = ["build_test_package", "create_test_manifest"]
 
 import textwrap
 import typing as typ
@@ -11,7 +11,14 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
-def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
+class PackageKwargs(typ.TypedDict, total=False):
+    """Optional arguments accepted by :func:`build_test_package`."""
+
+    dependencies: list[dict[str, str]]
+    publish: list[str] | None
+
+
+def create_test_manifest(workspace_root: Path, crate_name: str, content: str) -> Path:
     """Write a manifest for ``crate_name`` beneath ``workspace_root``."""
     manifest_dir = workspace_root / crate_name
     manifest_dir.mkdir(parents=True)
@@ -20,11 +27,11 @@ def _create_test_manifest(workspace_root: Path, crate_name: str, content: str) -
     return manifest_path
 
 
-def _build_test_package(
+def build_test_package(
     name: str,
     version: str,
     manifest_path: Path,
-    **kwargs: object,
+    **kwargs: typ.Unpack[PackageKwargs],
 ) -> dict[str, typ.Any]:
     """Create package metadata with predictable identifiers for tests.
 

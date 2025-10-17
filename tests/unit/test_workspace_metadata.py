@@ -21,7 +21,7 @@ from lading.workspace import (
 )
 from lading.workspace import metadata as metadata_module
 from tests.helpers.workspace_helpers import install_cargo_stub
-from tests.helpers.workspace_metadata import _build_test_package, _create_test_manifest
+from tests.helpers.workspace_metadata import build_test_package, create_test_manifest
 
 _METADATA_PAYLOAD: typ.Final[dict[str, typ.Any]] = {
     "workspace_root": "./",
@@ -187,7 +187,7 @@ def test_ensure_command_raises_on_missing_executable(
 def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     """Convert metadata payloads into strongly typed workspace models."""
     workspace_root = tmp_path
-    crate_manifest = _create_test_manifest(
+    crate_manifest = create_test_manifest(
         workspace_root,
         "crate",
         """
@@ -200,7 +200,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
         helper = { path = "../helper", version = "0.1.0" }
         """,
     )
-    helper_manifest = _create_test_manifest(
+    helper_manifest = create_test_manifest(
         workspace_root,
         "helper",
         """
@@ -213,7 +213,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
     metadata = {
         "workspace_root": str(workspace_root),
         "packages": [
-            _build_test_package(
+            build_test_package(
                 "crate",
                 "0.1.0",
                 crate_manifest,
@@ -223,7 +223,7 @@ def test_build_workspace_graph_constructs_models(tmp_path: Path) -> None:
                 ],
                 publish=[],
             ),
-            _build_test_package(
+            build_test_package(
                 "helper",
                 "0.1.0",
                 helper_manifest,
