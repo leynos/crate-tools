@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib  # noqa: TC003
+from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
@@ -11,39 +12,51 @@ from lading.workspace import WorkspaceCrate, WorkspaceDependency
 from tests.unit.conftest import _load_version
 
 
-def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Excluded crates keep their version while dependency requirements refresh."""
+def _make_test_crate_with_dependency(
+    tmp_path: Path,
+    *,
+    crate_name: str = "beta",
+    crate_version: str = "0.1.0",
+    dependency_name: str = "alpha",
+    dependency_version: str = "0.1.0",
+) -> WorkspaceCrate:
+    """Create a test crate manifest with a single dependency."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
-        """
+        f"""
         [package]
-        name = "beta"
-        version = "0.1.0"
+        name = "{crate_name}"
+        version = "{crate_version}"
 
         [dependencies]
-        alpha = "0.1.0"
+        {dependency_name} = "{dependency_version}"
         """,
         encoding="utf-8",
     )
-    crate = WorkspaceCrate(
-        id="beta-id",
-        name="beta",
-        version="0.1.0",
+    return WorkspaceCrate(
+        id=f"{crate_name}-id",
+        name=crate_name,
+        version=crate_version,
         manifest_path=manifest_path,
         root_path=manifest_path.parent,
         publish=True,
         readme_is_workspace=False,
         dependencies=(
             WorkspaceDependency(
-                package_id="alpha-id",
-                name="alpha",
-                manifest_name="alpha",
+                package_id=f"{dependency_name}-id",
+                name=dependency_name,
+                manifest_name=dependency_name,
                 kind=None,
             ),
         ),
     )
+
+
+def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Excluded crates keep their version while dependency requirements refresh."""
+    crate = _make_test_crate_with_dependency(tmp_path)
 
     changed = bump._update_crate_manifest(
         crate,
@@ -54,7 +67,7 @@ def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
     )
 
     assert changed is True
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = parse_toml(crate.manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == "0.1.0"
     assert document["dependencies"]["alpha"].value == "1.2.3"
 
@@ -63,35 +76,7 @@ def test_update_crate_manifest_updates_version_and_dependencies(
     tmp_path: pathlib.Path,
 ) -> None:
     """Crate manifests receive the new version and dependency updates."""
-    manifest_path = tmp_path / "Cargo.toml"
-    manifest_path.write_text(
-        """
-        [package]
-        name = "beta"
-        version = "0.1.0"
-
-        [dependencies]
-        alpha = "^0.1.0"
-        """,
-        encoding="utf-8",
-    )
-    crate = WorkspaceCrate(
-        id="beta-id",
-        name="beta",
-        version="0.1.0",
-        manifest_path=manifest_path,
-        root_path=manifest_path.parent,
-        publish=True,
-        readme_is_workspace=False,
-        dependencies=(
-            WorkspaceDependency(
-                package_id="alpha-id",
-                name="alpha",
-                manifest_name="alpha",
-                kind=None,
-            ),
-        ),
-    )
+    crate = _make_test_crate_with_dependency(tmp_path, dependency_version="^0.1.0")
 
     changed = bump._update_crate_manifest(
         crate,
@@ -102,7 +87,7 @@ def test_update_crate_manifest_updates_version_and_dependencies(
     )
 
     assert changed is True
-    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    document = parse_toml(crate.manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == "1.2.3"
     assert document["dependencies"]["alpha"].value == "^1.2.3"
 
