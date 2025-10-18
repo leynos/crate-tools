@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dataclasses as dc
-import pathlib  # noqa: TC003
+import pathlib
 import textwrap
 
 from tomlkit import parse as parse_toml
@@ -22,17 +22,16 @@ class _CrateSpec:
     version: str = "0.1.0"
 
 
-def _write_workspace_manifest(
-    root: pathlib.Path, members: list[str]
-) -> pathlib.Path:
+def _write_workspace_manifest(root: pathlib.Path, members: list[str]) -> pathlib.Path:
     """Create a minimal workspace manifest with the provided members."""
-    manifest = root / "Cargo.toml"
+    manifest = root / pathlib.Path("Cargo.toml")
     entries = ", ".join(f'"{member}"' for member in members)
     manifest.write_text(
         "[workspace]\n"
         f"members = [{entries}]\n\n"
         "[workspace.package]\n"
-        'version = "0.1.0"\n'
+        'version = "0.1.0"\n',
+        encoding="utf-8",
     )
     return manifest
 
@@ -70,7 +69,7 @@ def _build_workspace_with_internal_deps(
     for spec in specs:
         crate_dir = root / "crates" / spec.name
         crate_dir.mkdir(parents=True, exist_ok=True)
-        manifest_path = crate_dir / "Cargo.toml"
+        manifest_path = crate_dir / pathlib.Path("Cargo.toml")
         _write_crate_manifest(
             manifest_path,
             name=spec.name,
@@ -103,9 +102,10 @@ def _make_workspace(tmp_path: pathlib.Path) -> WorkspaceGraph:
     for member in members:
         crate_dir = tmp_path / member
         crate_dir.mkdir(parents=True)
-        manifest_path = crate_dir / "Cargo.toml"
+        manifest_path = crate_dir / pathlib.Path("Cargo.toml")
         manifest_path.write_text(
-            f'[package]\nname = "{crate_dir.name}"\nversion = "0.1.0"\n'
+            f'[package]\nname = "{crate_dir.name}"\nversion = "0.1.0"\n',
+            encoding="utf-8",
         )
         crates.append(
             WorkspaceCrate(
@@ -124,7 +124,7 @@ def _make_workspace(tmp_path: pathlib.Path) -> WorkspaceGraph:
 
 def _load_version(path: pathlib.Path, table: tuple[str, ...]) -> str:
     """Return the version string stored at ``table`` within ``path``."""
-    document = parse_toml(path.read_text())
+    document = parse_toml(path.read_text(encoding="utf-8"))
     current = document
     for key in table:
         current = current[key]
@@ -141,7 +141,7 @@ def _create_alpha_crate(workspace_root: pathlib.Path) -> WorkspaceCrate:
     """Create the alpha crate and return its workspace representation."""
     alpha_dir = workspace_root / "crates" / "alpha"
     alpha_dir.mkdir(parents=True, exist_ok=True)
-    alpha_manifest = alpha_dir / "Cargo.toml"
+    alpha_manifest = alpha_dir / pathlib.Path("Cargo.toml")
     alpha_manifest.write_text(
         '[package]\nname = "alpha"\nversion = "0.1.0"\n',
         encoding="utf-8",
@@ -164,7 +164,7 @@ def _create_beta_crate_with_dependencies(
     """Create the beta crate with dependency entries referencing alpha."""
     beta_dir = workspace_root / "crates" / "beta"
     beta_dir.mkdir(parents=True, exist_ok=True)
-    beta_manifest = beta_dir / "Cargo.toml"
+    beta_manifest = beta_dir / pathlib.Path("Cargo.toml")
     beta_manifest.write_text(
         textwrap.dedent(
             """

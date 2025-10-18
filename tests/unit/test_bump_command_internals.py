@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import pathlib  # noqa: TC003
 from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump
-from lading.workspace import WorkspaceCrate, WorkspaceDependency
-from tests.unit.conftest import _load_version
+from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
+from tests.unit.conftest import _load_version, _make_config
 
 
 def _make_test_crate_with_dependency(
@@ -26,6 +25,7 @@ def _make_test_crate_with_dependency(
         crate_name: Name of the crate to create.
         crate_version: Version of the crate.
         dependency: Tuple of (dependency_name, dependency_version).
+
     """
     dependency_name, dependency_version = dependency
     manifest_path = tmp_path / "Cargo.toml"
@@ -60,17 +60,42 @@ def _make_test_crate_with_dependency(
 
 
 def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
-    tmp_path: pathlib.Path,
+    tmp_path: Path,
 ) -> None:
     """Excluded crates keep their version while dependency requirements refresh."""
     crate = _make_test_crate_with_dependency(tmp_path)
 
+    alpha_manifest = Path(tmp_path, "alpha", "Cargo.toml")
+    alpha_manifest.parent.mkdir(parents=True, exist_ok=True)
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=tmp_path,
+        crates=(
+            crate,
+            WorkspaceCrate(
+                id="alpha-id",
+                name="alpha",
+                version="0.1.0",
+                manifest_path=alpha_manifest,
+                root_path=alpha_manifest.parent,
+                publish=True,
+                readme_is_workspace=False,
+                dependencies=(),
+            ),
+        ),
+    )
+    options = bump.BumpOptions(
+        configuration=_make_config(exclude=("beta",)),
+        workspace=workspace,
+    )
+
     changed = bump._update_crate_manifest(
         crate,
-        {"beta"},
-        {"alpha"},
         "1.2.3",
-        bump.BumpOptions(),
+        options,
     )
 
     assert changed is True
@@ -80,7 +105,7 @@ def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
 
 
 def test_update_crate_manifest_updates_version_and_dependencies(
-    tmp_path: pathlib.Path,
+    tmp_path: Path,
 ) -> None:
     """Crate manifests receive the new version and dependency updates."""
     crate = _make_test_crate_with_dependency(
@@ -88,12 +113,37 @@ def test_update_crate_manifest_updates_version_and_dependencies(
         dependency=("alpha", "^0.1.0"),
     )
 
+    alpha_manifest = Path(tmp_path, "alpha", "Cargo.toml")
+    alpha_manifest.parent.mkdir(parents=True, exist_ok=True)
+    alpha_manifest.write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
+    workspace = WorkspaceGraph(
+        workspace_root=tmp_path,
+        crates=(
+            crate,
+            WorkspaceCrate(
+                id="alpha-id",
+                name="alpha",
+                version="0.1.0",
+                manifest_path=alpha_manifest,
+                root_path=alpha_manifest.parent,
+                publish=True,
+                readme_is_workspace=False,
+                dependencies=(),
+            ),
+        ),
+    )
+    options = bump.BumpOptions(
+        configuration=_make_config(),
+        workspace=workspace,
+    )
+
     changed = bump._update_crate_manifest(
         crate,
-        set(),
-        {"alpha"},
         "1.2.3",
-        bump.BumpOptions(),
+        options,
     )
 
     assert changed is True
@@ -102,7 +152,7 @@ def test_update_crate_manifest_updates_version_and_dependencies(
     assert document["dependencies"]["alpha"].value == "^1.2.3"
 
 
-def test_format_result_message_handles_changes(tmp_path: pathlib.Path) -> None:
+def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     """The formatted result message reflects manifest counts and paths."""
     workspace_root = tmp_path
     manifest_paths = [
@@ -137,7 +187,7 @@ def test_format_result_message_handles_changes(tmp_path: pathlib.Path) -> None:
     ]
 
 
-def test_update_manifest_writes_when_changed(tmp_path: pathlib.Path) -> None:
+def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
     """Applying a new version persists changes to disk."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n')
@@ -148,7 +198,7 @@ def test_update_manifest_writes_when_changed(tmp_path: pathlib.Path) -> None:
     assert _load_version(manifest_path, ("package",)) == "1.0.0"
 
 
-def test_update_manifest_preserves_inline_comment(tmp_path: pathlib.Path) -> None:
+def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
     """Inline comments survive manifest rewrites."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
@@ -164,7 +214,7 @@ def test_update_manifest_preserves_inline_comment(tmp_path: pathlib.Path) -> Non
     assert document["package"]["version"] == "1.2.3"
 
 
-def test_update_manifest_skips_when_unchanged(tmp_path: pathlib.Path) -> None:
+def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
     """No write occurs when the manifest already records the target version."""
     manifest_path = tmp_path / "Cargo.toml"
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'

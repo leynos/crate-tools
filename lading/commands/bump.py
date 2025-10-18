@@ -7,7 +7,7 @@ import re
 import tempfile
 import typing as typ
 from contextlib import suppress
-from dataclasses import dataclass, field  # noqa: ICN003
+from dataclasses import dataclass, field, replace  # noqa: ICN003
 from pathlib import Path
 
 from tomlkit import parse as parse_toml
@@ -40,7 +40,7 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 _NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class BumpOptions:
     """Configuration options for bump operations."""
 
@@ -55,6 +55,7 @@ class BumpOptions:
 def run(
     workspace_root: Path | str,
     target_version: str,
+    *,
     options: BumpOptions | None = None,
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
@@ -82,16 +83,14 @@ def run(
     changed_manifests: list[Path] = []
     workspace_manifest = root_path / "Cargo.toml"
     workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
+    workspace_options = replace(
+        base_options, dependency_sections=workspace_dependency_sections
+    )
     if _update_manifest(
         workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,
-        BumpOptions(
-            dry_run=base_options.dry_run,
-            configuration=base_options.configuration,
-            workspace=base_options.workspace,
-            dependency_sections=workspace_dependency_sections,
-        ),
+        workspace_options,
     ):
         changed_manifests.append(workspace_manifest)
 
@@ -100,8 +99,6 @@ def run(
         for crate in workspace.crates
         if _update_crate_manifest(
             crate,
-            excluded,
-            updated_crate_names,
             target_version,
             base_options,
         )
@@ -117,12 +114,21 @@ def run(
 
 def _update_crate_manifest(
     crate: WorkspaceCrate,
-    excluded: typ.Collection[str],
-    updated_crate_names: typ.Collection[str],
     target_version: str,
     options: BumpOptions,
 ) -> bool:
     """Apply updates for ``crate`` while respecting exclusion rules."""
+    # Derive exclusions and dependency targets from the shared options to avoid
+    # threading numerous parameters between helpers.
+    configuration = options.configuration
+    workspace = options.workspace
+    if configuration is None or workspace is None:
+        message = "BumpOptions must supply configuration and workspace."
+        raise ValueError(message)
+    excluded = set(configuration.bump.exclude)
+    updated_crate_names = {
+        member.name for member in workspace.crates if member.name not in excluded
+    }
     dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
     if crate.name in excluded:
         selectors: tuple[tuple[str, ...], ...] = ()
@@ -130,16 +136,12 @@ def _update_crate_manifest(
         selectors = (("package",),)
     if not selectors and not dependency_sections:
         return False
+    crate_options = replace(options, dependency_sections=dependency_sections)
     return _update_manifest(
         crate.manifest_path,
         selectors,
         target_version,
-        BumpOptions(
-            dry_run=options.dry_run,
-            configuration=options.configuration,
-            workspace=options.workspace,
-            dependency_sections=dependency_sections,
-        ),
+        crate_options,
     )
 
 
