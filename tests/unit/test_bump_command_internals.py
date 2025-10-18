@@ -2,22 +2,17 @@
 
 from __future__ import annotations
 
-import typing as typ
-from pathlib import Path
+import pathlib  # noqa: TC003
 
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump
 from lading.workspace import WorkspaceCrate, WorkspaceDependency
-
 from tests.unit.conftest import _load_version
-
-if typ.TYPE_CHECKING:
-    import pytest
 
 
 def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
-    tmp_path: Path,
+    tmp_path: pathlib.Path,
 ) -> None:
     """Excluded crates keep their version while dependency requirements refresh."""
     manifest_path = tmp_path / "Cargo.toml"
@@ -55,6 +50,7 @@ def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
         {"beta"},
         {"alpha"},
         "1.2.3",
+        bump.BumpOptions(),
     )
 
     assert changed is True
@@ -63,7 +59,9 @@ def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
     assert document["dependencies"]["alpha"].value == "1.2.3"
 
 
-def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) -> None:
+def test_update_crate_manifest_updates_version_and_dependencies(
+    tmp_path: pathlib.Path,
+) -> None:
     """Crate manifests receive the new version and dependency updates."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
@@ -100,6 +98,7 @@ def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) 
         set(),
         {"alpha"},
         "1.2.3",
+        bump.BumpOptions(),
     )
 
     assert changed is True
@@ -108,7 +107,7 @@ def test_update_crate_manifest_updates_version_and_dependencies(tmp_path: Path) 
     assert document["dependencies"]["alpha"].value == "^1.2.3"
 
 
-def test_format_result_message_handles_changes(tmp_path: Path) -> None:
+def test_format_result_message_handles_changes(tmp_path: pathlib.Path) -> None:
     """The formatted result message reflects manifest counts and paths."""
     workspace_root = tmp_path
     manifest_paths = [
@@ -143,22 +142,26 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     ]
 
 
-def test_update_manifest_writes_when_changed(tmp_path: Path) -> None:
+def test_update_manifest_writes_when_changed(tmp_path: pathlib.Path) -> None:
     """Applying a new version persists changes to disk."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text('[package]\nname = "demo"\nversion = "0.1.0"\n')
-    changed = bump._update_manifest(manifest_path, (("package",),), "1.0.0")
+    changed = bump._update_manifest(
+        manifest_path, (("package",),), "1.0.0", bump.BumpOptions()
+    )
     assert changed is True
     assert _load_version(manifest_path, ("package",)) == "1.0.0"
 
 
-def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
+def test_update_manifest_preserves_inline_comment(tmp_path: pathlib.Path) -> None:
     """Inline comments survive manifest rewrites."""
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         '[package]\nversion = "0.1.0"  # keep me\n', encoding="utf-8"
     )
-    changed = bump._update_manifest(manifest_path, (("package",),), "1.2.3")
+    changed = bump._update_manifest(
+        manifest_path, (("package",),), "1.2.3", bump.BumpOptions()
+    )
     assert changed is True
     text = manifest_path.read_text(encoding="utf-8")
     assert "# keep me" in text
@@ -166,12 +169,14 @@ def test_update_manifest_preserves_inline_comment(tmp_path: Path) -> None:
     assert document["package"]["version"] == "1.2.3"
 
 
-def test_update_manifest_skips_when_unchanged(tmp_path: Path) -> None:
+def test_update_manifest_skips_when_unchanged(tmp_path: pathlib.Path) -> None:
     """No write occurs when the manifest already records the target version."""
     manifest_path = tmp_path / "Cargo.toml"
     original = '[package]\nname = "demo"\nversion = "0.1.0"\n'
     manifest_path.write_text(original)
-    changed = bump._update_manifest(manifest_path, (("package",),), "0.1.0")
+    changed = bump._update_manifest(
+        manifest_path, (("package",),), "0.1.0", bump.BumpOptions()
+    )
     assert changed is False
     assert manifest_path.read_text() == original
 

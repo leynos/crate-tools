@@ -209,9 +209,11 @@ def bump(
         lambda root, configuration, workspace: commands.bump.run(
             root,
             version,
-            configuration=configuration,
-            workspace=workspace,
-            dry_run=dry_run,
+            options=commands.bump.BumpOptions(
+                dry_run=dry_run,
+                configuration=configuration,
+                workspace=workspace,
+            ),
         ),
     )
 

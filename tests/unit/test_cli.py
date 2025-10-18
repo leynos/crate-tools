@@ -156,10 +156,11 @@ def test_main_dispatches_command(
         workspace_root_arg, version_arg = captured_args
         assert workspace_root_arg == tmp_path.resolve()
         assert version_arg == case.expected_version
-        assert "configuration" in captured_kwargs
-        assert isinstance(captured_kwargs["configuration"], config_module.LadingConfig)
-        workspace_model = captured_kwargs["workspace"]
-        assert captured_kwargs["dry_run"] is False
+        options = captured_kwargs["options"]
+        assert isinstance(options, bump_command.BumpOptions)
+        assert isinstance(options.configuration, config_module.LadingConfig)
+        workspace_model = options.workspace
+        assert options.dry_run is False
     else:
         workspace_root_arg, configuration, workspace_model = captured_args
         assert workspace_root_arg == tmp_path.resolve()
@@ -234,7 +235,9 @@ def test_bump_cli_accepts_dry_run_flag(
     )
 
     assert exit_code == 0
-    assert captured_kwargs["dry_run"] is True
+    options = captured_kwargs["options"]
+    assert isinstance(options, bump_command.BumpOptions)
+    assert options.dry_run is True
 
 
 @pytest.mark.parametrize(
@@ -304,15 +307,11 @@ def test_bump_command_accepts_extended_semver(
         workspace_root: Path,
         version: str,
         *,
-        configuration: config_module.LadingConfig,
-        workspace: WorkspaceGraph,
-        dry_run: bool,
+        options: bump_command.BumpOptions,
     ) -> str:
         captured["workspace_root"] = workspace_root
         captured["version"] = version
-        captured["configuration"] = configuration
-        captured["workspace"] = workspace
-        captured["dry_run"] = dry_run
+        captured["options"] = options
         return "ok"
 
     monkeypatch.setattr(bump_command, "run", fake_run)
@@ -322,9 +321,11 @@ def test_bump_command_accepts_extended_semver(
     capsys.readouterr()
     assert captured["workspace_root"] == tmp_path.resolve()
     assert captured["version"] == version
-    assert isinstance(captured["configuration"], config_module.LadingConfig)
-    assert captured["workspace"] is graph
-    assert captured["dry_run"] is False
+    options = captured["options"]
+    assert isinstance(options, bump_command.BumpOptions)
+    assert isinstance(options.configuration, config_module.LadingConfig)
+    assert options.workspace is graph
+    assert options.dry_run is False
 
 
 @pytest.mark.usefixtures("minimal_config")
@@ -339,15 +340,13 @@ def test_cyclopts_invoke_uses_workspace_env(
         workspace_root: Path,
         version: str,
         *,
-        configuration: config_module.LadingConfig,
-        workspace: WorkspaceGraph,
-        dry_run: bool,
+        options: bump_command.BumpOptions,
     ) -> str:
         assert workspace_root == tmp_path.resolve()
         assert version == "4.5.6"
-        assert isinstance(configuration, config_module.LadingConfig)
-        assert workspace is graph
-        assert dry_run is False
+        assert isinstance(options.configuration, config_module.LadingConfig)
+        assert options.workspace is graph
+        assert options.dry_run is False
         return "bump summary"
 
     monkeypatch.setattr(bump_command, "run", fake_run)

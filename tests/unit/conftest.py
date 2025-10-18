@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import pathlib  # noqa: TC003
 import textwrap
-import typing as typ
-from pathlib import Path
 
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-
-if typ.TYPE_CHECKING:
-    import pytest
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -26,7 +22,9 @@ class _CrateSpec:
     version: str = "0.1.0"
 
 
-def _write_workspace_manifest(root: Path, members: list[str]) -> Path:
+def _write_workspace_manifest(
+    root: pathlib.Path, members: list[str]
+) -> pathlib.Path:
     """Create a minimal workspace manifest with the provided members."""
     manifest = root / "Cargo.toml"
     entries = ", ".join(f'"{member}"' for member in members)
@@ -40,7 +38,7 @@ def _write_workspace_manifest(root: Path, members: list[str]) -> Path:
 
 
 def _write_crate_manifest(
-    manifest_path: Path,
+    manifest_path: pathlib.Path,
     *,
     name: str,
     version: str,
@@ -60,14 +58,14 @@ def _write_crate_manifest(
 
 
 def _build_workspace_with_internal_deps(
-    root: Path, *, specs: tuple[_CrateSpec, ...]
-) -> tuple[WorkspaceGraph, dict[str, Path]]:
+    root: pathlib.Path, *, specs: tuple[_CrateSpec, ...]
+) -> tuple[WorkspaceGraph, dict[str, pathlib.Path]]:
     """Create a workspace populated with crates and return manifest paths."""
     root.mkdir(parents=True, exist_ok=True)
     members = [f"crates/{spec.name}" for spec in specs]
     _write_workspace_manifest(root, members)
 
-    manifests: dict[str, Path] = {}
+    manifests: dict[str, pathlib.Path] = {}
     crates: list[WorkspaceCrate] = []
     for spec in specs:
         crate_dir = root / "crates" / spec.name
@@ -96,7 +94,7 @@ def _build_workspace_with_internal_deps(
     return workspace, manifests
 
 
-def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
+def _make_workspace(tmp_path: pathlib.Path) -> WorkspaceGraph:
     """Construct a workspace graph with two member crates."""
     tmp_path.mkdir(parents=True, exist_ok=True)
     members = ["crates/alpha", "crates/beta"]
@@ -124,7 +122,7 @@ def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
     return WorkspaceGraph(workspace_root=tmp_path, crates=tuple(crates))
 
 
-def _load_version(path: Path, table: tuple[str, ...]) -> str:
+def _load_version(path: pathlib.Path, table: tuple[str, ...]) -> str:
     """Return the version string stored at ``table`` within ``path``."""
     document = parse_toml(path.read_text())
     current = document
@@ -139,7 +137,7 @@ def _make_config(**kwargs: str | tuple[str, ...]) -> config_module.LadingConfig:
     return config_module.LadingConfig(bump=bump_config)
 
 
-def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
+def _create_alpha_crate(workspace_root: pathlib.Path) -> WorkspaceCrate:
     """Create the alpha crate and return its workspace representation."""
     alpha_dir = workspace_root / "crates" / "alpha"
     alpha_dir.mkdir(parents=True, exist_ok=True)
@@ -161,7 +159,7 @@ def _create_alpha_crate(workspace_root: Path) -> WorkspaceCrate:
 
 
 def _create_beta_crate_with_dependencies(
-    workspace_root: Path, alpha_id: str
+    workspace_root: pathlib.Path, alpha_id: str
 ) -> WorkspaceCrate:
     """Create the beta crate with dependency entries referencing alpha."""
     beta_dir = workspace_root / "crates" / "beta"
