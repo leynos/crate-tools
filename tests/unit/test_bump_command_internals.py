@@ -17,10 +17,17 @@ def _make_test_crate_with_dependency(
     *,
     crate_name: str = "beta",
     crate_version: str = "0.1.0",
-    dependency_name: str = "alpha",
-    dependency_version: str = "0.1.0",
+    dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> WorkspaceCrate:
-    """Create a test crate manifest with a single dependency."""
+    """Create a test crate manifest with a single dependency.
+
+    Args:
+        tmp_path: Directory where the manifest will be created.
+        crate_name: Name of the crate to create.
+        crate_version: Version of the crate.
+        dependency: Tuple of (dependency_name, dependency_version).
+    """
+    dependency_name, dependency_version = dependency
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         f"""
@@ -76,7 +83,10 @@ def test_update_crate_manifest_updates_version_and_dependencies(
     tmp_path: pathlib.Path,
 ) -> None:
     """Crate manifests receive the new version and dependency updates."""
-    crate = _make_test_crate_with_dependency(tmp_path, dependency_version="^0.1.0")
+    crate = _make_test_crate_with_dependency(
+        tmp_path,
+        dependency=("alpha", "^0.1.0"),
+    )
 
     changed = bump._update_crate_manifest(
         crate,
