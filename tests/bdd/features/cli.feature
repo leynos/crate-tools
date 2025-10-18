@@ -7,6 +7,14 @@ Feature: Lading CLI scaffolding
     And the workspace manifest version is "1.2.3"
     And the crate "alpha" manifest version is "1.2.3"
 
+  Scenario: Dry running the bump command previews manifest updates
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    When I invoke lading bump 1.2.3 with that workspace using --dry-run
+    Then the bump command reports a dry-run plan for "1.2.3"
+    And the workspace manifest version is "0.1.0"
+    And the crate "alpha" manifest version is "0.1.0"
+
   Scenario: Bumping with an invalid version fails fast
     Given a workspace directory with configuration
     When I invoke lading bump 1.2 with that workspace

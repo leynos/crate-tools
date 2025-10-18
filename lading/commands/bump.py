@@ -7,6 +7,7 @@ import re
 import tempfile
 import typing as typ
 from contextlib import suppress
+from dataclasses import dataclass, field  # noqa: ICN003
 from pathlib import Path
 
 from tomlkit import parse as parse_toml
@@ -39,43 +40,79 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 _NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
 
+@dataclass(frozen=True)
+class BumpOptions:
+    """Configuration options for bump operations."""
+
+    dry_run: bool = False
+    configuration: LadingConfig | None = None
+    workspace: WorkspaceGraph | None = None
+    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = field(
+        default=None
+    )
+
+
 def run(
     workspace_root: Path | str,
     target_version: str,
-    *,
-    configuration: LadingConfig | None = None,
-    workspace: WorkspaceGraph | None = None,
+    options: BumpOptions | None = None,
 ) -> str:
     """Update workspace and crate manifest versions to ``target_version``."""
+    options = BumpOptions() if options is None else options
     root_path = normalise_workspace_root(workspace_root)
+    configuration = options.configuration
     if configuration is None:
         configuration = config_module.current_configuration()
+    workspace = options.workspace
     if workspace is None:
         from lading.workspace import load_workspace
 
         workspace = load_workspace(root_path)
+    base_options = BumpOptions(
+        dry_run=options.dry_run,
+        configuration=configuration,
+        workspace=workspace,
+    )
 
     excluded = set(configuration.bump.exclude)
     updated_crate_names = {
         crate.name for crate in workspace.crates if crate.name not in excluded
     }
 
-    changed = 0
+    changed_manifests: list[Path] = []
     workspace_manifest = root_path / "Cargo.toml"
     workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
     if _update_manifest(
         workspace_manifest,
         _WORKSPACE_SELECTORS,
         target_version,
-        dependency_sections=workspace_dependency_sections,
+        BumpOptions(
+            dry_run=base_options.dry_run,
+            configuration=base_options.configuration,
+            workspace=base_options.workspace,
+            dependency_sections=workspace_dependency_sections,
+        ),
     ):
-        changed += 1
+        changed_manifests.append(workspace_manifest)
 
-    for crate in workspace.crates:
-        if _update_crate_manifest(crate, excluded, updated_crate_names, target_version):
-            changed += 1
+    changed_manifests.extend(
+        crate.manifest_path
+        for crate in workspace.crates
+        if _update_crate_manifest(
+            crate,
+            excluded,
+            updated_crate_names,
+            target_version,
+            base_options,
+        )
+    )
 
-    return _format_result_message(changed, target_version)
+    return _format_result_message(
+        changed_manifests,
+        target_version,
+        dry_run=base_options.dry_run,
+        workspace_root=root_path,
+    )
 
 
 def _update_crate_manifest(
@@ -83,6 +120,7 @@ def _update_crate_manifest(
     excluded: typ.Collection[str],
     updated_crate_names: typ.Collection[str],
     target_version: str,
+    options: BumpOptions,
 ) -> bool:
     """Apply updates for ``crate`` while respecting exclusion rules."""
     dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
@@ -96,23 +134,57 @@ def _update_crate_manifest(
         crate.manifest_path,
         selectors,
         target_version,
-        dependency_sections=dependency_sections,
+        BumpOptions(
+            dry_run=options.dry_run,
+            configuration=options.configuration,
+            workspace=options.workspace,
+            dependency_sections=dependency_sections,
+        ),
     )
 
 
-def _format_result_message(changed: int, target_version: str) -> str:
+def _format_result_message(
+    changed_manifests: typ.Sequence[Path],
+    target_version: str,
+    *,
+    dry_run: bool,
+    workspace_root: Path,
+) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if changed == 0:
-        return f"No manifest changes required; all versions already {target_version}."
-    return f"Updated version to {target_version} in {changed} manifest(s)."
+    if not changed_manifests:
+        base = f"No manifest changes required; all versions already {target_version}."
+        if dry_run:
+            return f"Dry run; {base[0].lower()}{base[1:]}"
+        return base
+
+    count = len(changed_manifests)
+    if dry_run:
+        header = (
+            f"Dry run; would update version to {target_version} in {count} manifest(s):"
+        )
+    else:
+        header = f"Updated version to {target_version} in {count} manifest(s):"
+    formatted_paths = [
+        f"- {_format_manifest_path(manifest_path, workspace_root)}"
+        for manifest_path in changed_manifests
+    ]
+    return "\n".join([header, *formatted_paths])
+
+
+def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
+    """Return ``manifest_path`` relative to ``workspace_root`` when possible."""
+    try:
+        relative = manifest_path.relative_to(workspace_root)
+    except ValueError:
+        return str(manifest_path)
+    return str(relative)
 
 
 def _update_manifest(
     manifest_path: Path,
     selectors: tuple[tuple[str, ...], ...],
     target_version: str,
-    *,
-    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = None,
+    options: BumpOptions,
 ) -> bool:
     """Apply ``target_version`` to each table described by ``selectors``."""
     document = _parse_manifest(manifest_path)
@@ -120,11 +192,11 @@ def _update_manifest(
     for selector in selectors:
         table = _select_table(document, selector)
         changed |= _assign_version(table, target_version)
-    if dependency_sections:
+    if options.dependency_sections:
         changed |= _update_dependency_sections(
-            document, dependency_sections, target_version
+            document, options.dependency_sections, target_version
         )
-    if changed:
+    if changed and not options.dry_run:
         _write_atomic_text(manifest_path, document.as_string())
     return changed
 

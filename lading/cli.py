@@ -29,6 +29,12 @@ _VERSION_PARAMETER = Parameter(
 )
 VersionArgument = typ.Annotated[str, _VERSION_PARAMETER]
 
+_DRY_RUN_PARAMETER = Parameter(
+    name="dry-run",
+    help="Preview manifest changes without writing files.",
+)
+DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
+
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
 
@@ -192,6 +198,8 @@ def _validate_version_argument(version: str) -> None:
 def bump(
     version: VersionArgument,
     workspace_root: WorkspaceRootOption | None = None,
+    *,
+    dry_run: DryRunFlag = False,
 ) -> str:
     """Update workspace manifests to ``version``."""
     _validate_version_argument(version)
@@ -201,8 +209,11 @@ def bump(
         lambda root, configuration, workspace: commands.bump.run(
             root,
             version,
-            configuration=configuration,
-            workspace=workspace,
+            options=commands.bump.BumpOptions(
+                dry_run=dry_run,
+                configuration=configuration,
+                workspace=workspace,
+            ),
         ),
     )
 

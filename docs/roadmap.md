@@ -103,7 +103,7 @@ workspace and member crate manifests.
     are correctly updated to point to the new workspace version, preserving
     operators like `^` or `~`.
 
-- [ ] **Implement `--dry-run` Mode for Bumping:**
+- [x] **Implement `--dry-run` Mode for Bumping:**
 
   - **Outcome:** The `--dry-run` flag prevents any file modifications and
     instead prints a summary of intended changes.
