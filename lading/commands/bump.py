@@ -118,24 +118,19 @@ def _update_crate_manifest(
     options: BumpOptions,
 ) -> bool:
     """Apply updates for ``crate`` while respecting exclusion rules."""
-    # Derive exclusions and dependency targets from the shared options to avoid
-    # threading numerous parameters between helpers.
-    configuration = options.configuration
-    workspace = options.workspace
-    if configuration is None or workspace is None:
-        message = "BumpOptions must supply configuration and workspace."
-        raise ValueError(message)
+    configuration, workspace = _validate_bump_options(options)
+
     excluded = set(configuration.bump.exclude)
     updated_crate_names = {
         member.name for member in workspace.crates if member.name not in excluded
     }
+
+    selectors = _determine_package_selectors(crate.name, excluded)
     dependency_sections = _dependency_sections_for_crate(crate, updated_crate_names)
-    if crate.name in excluded:
-        selectors: tuple[tuple[str, ...], ...] = ()
-    else:
-        selectors = (("package",),)
-    if not selectors and not dependency_sections:
+
+    if _should_skip_crate_update(selectors, dependency_sections):
         return False
+
     crate_options = dc.replace(options, dependency_sections=dependency_sections)
     return _update_manifest(
         crate.manifest_path,
@@ -182,6 +177,54 @@ def _format_manifest_path(manifest_path: Path, workspace_root: Path) -> str:
     except ValueError:
         return str(manifest_path)
     return str(relative)
+
+
+def _validate_bump_options(options: BumpOptions) -> tuple[LadingConfig, WorkspaceGraph]:
+    """Validate and extract required configuration and workspace from options.
+
+    Raises:
+        ValueError: If configuration or workspace is None.
+
+    Returns:
+        Tuple of (configuration, workspace).
+
+    """
+    if options.configuration is None or options.workspace is None:
+        message = "BumpOptions must supply configuration and workspace."
+        raise ValueError(message)
+    return options.configuration, options.workspace
+
+
+def _determine_package_selectors(
+    crate_name: str,
+    excluded: typ.Collection[str],
+) -> tuple[tuple[str, ...], ...]:
+    """Return package selectors for the crate, respecting exclusion rules.
+
+    Args:
+        crate_name: Name of the crate to check.
+        excluded: Collection of excluded crate names.
+
+    Returns:
+        Package selectors tuple, or empty tuple if crate is excluded.
+
+    """
+    if crate_name in excluded:
+        return ()
+    return (("package",),)
+
+
+def _should_skip_crate_update(
+    selectors: tuple[tuple[str, ...], ...],
+    dependency_sections: typ.Mapping[str, typ.Collection[str]],
+) -> bool:
+    """Check if a crate update should be skipped due to no work required.
+
+    Returns:
+        True if both selectors and dependency_sections are empty.
+
+    """
+    return not selectors and not dependency_sections
 
 
 def _update_manifest(
