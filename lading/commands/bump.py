@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import os
 import re
 import tempfile
 import typing as typ
 from contextlib import suppress
-from dataclasses import dataclass, field, replace  # noqa: ICN003
 from pathlib import Path
 
 from tomlkit import parse as parse_toml
@@ -40,14 +40,14 @@ _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
 _NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
 
-@dataclass(frozen=True, slots=True)
+@dc.dataclass(frozen=True, slots=True)
 class BumpOptions:
     """Configuration options for bump operations."""
 
     dry_run: bool = False
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
-    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = field(
+    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = dc.field(
         default=None
     )
 
@@ -83,7 +83,7 @@ def run(
     changed_manifests: list[Path] = []
     workspace_manifest = root_path / "Cargo.toml"
     workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
-    workspace_options = replace(
+    workspace_options = dc.replace(
         base_options, dependency_sections=workspace_dependency_sections
     )
     if _update_manifest(
@@ -136,7 +136,7 @@ def _update_crate_manifest(
         selectors = (("package",),)
     if not selectors and not dependency_sections:
         return False
-    crate_options = replace(options, dependency_sections=dependency_sections)
+    crate_options = dc.replace(options, dependency_sections=dependency_sections)
     return _update_manifest(
         crate.manifest_path,
         selectors,
@@ -154,10 +154,12 @@ def _format_result_message(
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
     if not changed_manifests:
-        base = f"No manifest changes required; all versions already {target_version}."
         if dry_run:
-            return f"Dry run; {base[0].lower()}{base[1:]}"
-        return base
+            return (
+                "Dry run; no manifest changes required; "
+                f"all versions already {target_version}."
+            )
+        return f"No manifest changes required; all versions already {target_version}."
 
     count = len(changed_manifests)
     if dry_run:
