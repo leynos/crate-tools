@@ -27,15 +27,20 @@ class _CrateSpec:
 
 def _write_workspace_manifest(root: Path, members: tuple[str, ...]) -> Path:
     """Create a minimal workspace manifest with the provided members."""
+    from tomlkit import array, document, dumps, table
+
     manifest = root / "Cargo.toml"
-    entries = ", ".join(f'"{member}"' for member in members)
-    manifest.write_text(
-        "[workspace]\n"
-        f"members = [{entries}]\n\n"
-        "[workspace.package]\n"
-        'version = "0.1.0"\n',
-        encoding="utf-8",
-    )
+    doc = document()
+    workspace_table = table()
+    members_array = array()
+    for member in members:
+        members_array.append(member)
+    workspace_table.add("members", members_array)
+    doc.add("workspace", workspace_table)
+    package_table = table()
+    package_table.add("version", "0.1.0")
+    doc["workspace"]["package"] = package_table
+    manifest.write_text(dumps(doc), encoding="utf-8")
     return manifest
 
 
@@ -69,7 +74,12 @@ def _build_workspace_with_internal_deps(
 
     manifests: dict[str, Path] = {}
     crates: list[WorkspaceCrate] = []
+    seen: set[str] = set()
     for spec in specs:
+        if spec.name in seen:
+            message = f"Duplicate crate name in specs: {spec.name!r}"
+            raise ValueError(message)
+        seen.add(spec.name)
         crate_dir = root / "crates" / spec.name
         crate_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = crate_dir / "Cargo.toml"
@@ -100,24 +110,28 @@ def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
     """Construct a workspace graph with two member crates."""
     alpha_spec = _CrateSpec(name="alpha")
     beta_spec = _CrateSpec(name="beta")
-    workspace, _ = _build_workspace_with_internal_deps(
-        tmp_path, specs=(alpha_spec, beta_spec)
-    )
-    return workspace
+    return _build_workspace_with_internal_deps(tmp_path, specs=(alpha_spec, beta_spec))[
+        0
+    ]
 
 
 def _load_version(path: Path, table: tuple[str, ...]) -> str:
     """Return the version string stored at ``table`` within ``path``."""
     document = parse_toml(path.read_text(encoding="utf-8"))
     current = document
-    for key in table:
-        current = current[key]
-    return current["version"]
+    try:
+        for key in table:
+            current = current[key]
+        return current["version"]
+    except KeyError as error:
+        dotted = ".".join((*table, "version"))
+        message = f"Missing key path '{dotted}' in {path}"
+        raise KeyError(message) from error
 
 
 def _make_config(**kwargs: str | tuple[str, ...]) -> config_module.LadingConfig:
     """Construct a configuration instance for tests."""
-    bump_config = config_module.BumpConfig(**kwargs)
+    bump_config = config_module.BumpConfig.from_mapping(dict(kwargs))
     return config_module.LadingConfig(bump=bump_config)
 
 
