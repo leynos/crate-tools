@@ -98,31 +98,12 @@ def _build_workspace_with_internal_deps(
 
 def _make_workspace(tmp_path: Path) -> WorkspaceGraph:
     """Construct a workspace graph with two member crates."""
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    members = ("crates/alpha", "crates/beta")
-    _write_workspace_manifest(tmp_path, members)
-    crates: list[WorkspaceCrate] = []
-    for member in members:
-        crate_dir = tmp_path / member
-        crate_dir.mkdir(parents=True)
-        manifest_path = crate_dir / "Cargo.toml"
-        manifest_path.write_text(
-            f'[package]\nname = "{crate_dir.name}"\nversion = "0.1.0"\n',
-            encoding="utf-8",
-        )
-        crates.append(
-            WorkspaceCrate(
-                id=f"{crate_dir.name}-id",
-                name=crate_dir.name,
-                version="0.1.0",
-                manifest_path=manifest_path,
-                root_path=crate_dir,
-                publish=True,
-                readme_is_workspace=False,
-                dependencies=(),
-            )
-        )
-    return WorkspaceGraph(workspace_root=tmp_path, crates=tuple(crates))
+    alpha_spec = _CrateSpec(name="alpha")
+    beta_spec = _CrateSpec(name="beta")
+    workspace, _ = _build_workspace_with_internal_deps(
+        tmp_path, specs=(alpha_spec, beta_spec)
+    )
+    return workspace
 
 
 def _load_version(path: Path, table: tuple[str, ...]) -> str:
