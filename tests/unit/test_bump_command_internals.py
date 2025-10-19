@@ -59,34 +59,53 @@ def _make_test_crate_with_dependency(
     )
 
 
-def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
+def _make_workspace_with_alpha_dependency(
     tmp_path: Path,
-) -> None:
-    """Excluded crates keep their version while dependency requirements refresh."""
-    crate = _make_test_crate_with_dependency(tmp_path)
+    *,
+    dependency: tuple[str, str] = ("alpha", "0.1.0"),
+) -> tuple[WorkspaceCrate, WorkspaceGraph]:
+    """Create a workspace with beta crate depending on alpha crate.
 
-    alpha_manifest = Path(tmp_path, "alpha", "Cargo.toml")
+    Args:
+        tmp_path: Directory where manifests will be created.
+        dependency: Tuple of (dependency_name, dependency_version) for beta's dependency.
+
+    Returns:
+        Tuple of (beta_crate, workspace_graph).
+    """
+    beta_crate = _make_test_crate_with_dependency(tmp_path, dependency=dependency)
+
+    alpha_manifest = tmp_path / "alpha" / "Cargo.toml"
     alpha_manifest.parent.mkdir(parents=True, exist_ok=True)
     alpha_manifest.write_text(
         '[package]\nname = "alpha"\nversion = "0.1.0"\n',
         encoding="utf-8",
     )
+
+    alpha_crate = WorkspaceCrate(
+        id="alpha-id",
+        name="alpha",
+        version="0.1.0",
+        manifest_path=alpha_manifest,
+        root_path=alpha_manifest.parent,
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+
     workspace = WorkspaceGraph(
         workspace_root=tmp_path,
-        crates=(
-            crate,
-            WorkspaceCrate(
-                id="alpha-id",
-                name="alpha",
-                version="0.1.0",
-                manifest_path=alpha_manifest,
-                root_path=alpha_manifest.parent,
-                publish=True,
-                readme_is_workspace=False,
-                dependencies=(),
-            ),
-        ),
+        crates=(beta_crate, alpha_crate),
     )
+
+    return beta_crate, workspace
+
+
+def test_update_crate_manifest_skips_version_bump_for_excluded_crate(
+    tmp_path: Path,
+) -> None:
+    """Excluded crates keep their version while dependency requirements refresh."""
+    crate, workspace = _make_workspace_with_alpha_dependency(tmp_path)
     options = bump.BumpOptions(
         configuration=_make_config(exclude=("beta",)),
         workspace=workspace,
@@ -108,32 +127,9 @@ def test_update_crate_manifest_updates_version_and_dependencies(
     tmp_path: Path,
 ) -> None:
     """Crate manifests receive the new version and dependency updates."""
-    crate = _make_test_crate_with_dependency(
+    crate, workspace = _make_workspace_with_alpha_dependency(
         tmp_path,
         dependency=("alpha", "^0.1.0"),
-    )
-
-    alpha_manifest = Path(tmp_path, "alpha", "Cargo.toml")
-    alpha_manifest.parent.mkdir(parents=True, exist_ok=True)
-    alpha_manifest.write_text(
-        '[package]\nname = "alpha"\nversion = "0.1.0"\n',
-        encoding="utf-8",
-    )
-    workspace = WorkspaceGraph(
-        workspace_root=tmp_path,
-        crates=(
-            crate,
-            WorkspaceCrate(
-                id="alpha-id",
-                name="alpha",
-                version="0.1.0",
-                manifest_path=alpha_manifest,
-                root_path=alpha_manifest.parent,
-                publish=True,
-                readme_is_workspace=False,
-                dependencies=(),
-            ),
-        ),
     )
     options = bump.BumpOptions(
         configuration=_make_config(),
