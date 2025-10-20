@@ -99,14 +99,20 @@ Updated version to 1.2.3 in 3 manifest(s):
 - crates/beta/Cargo.toml
 ```
 
-This lets release automation assert the change without parsing files directly.
-When every manifest already records the requested version, the CLI instead
-reports: `No manifest changes required; all versions already 1.2.3.`
+All paths are relative to the workspace root. This lets release automation
+assert the change without parsing files directly.
+When every manifest already records the requested version, the CLI reports:
+`No manifest changes required; all versions already 1.2.3.`
 
-Pass `--dry-run` to preview the same summary without writing to disk. The
-output uses a "Dry run" prefix but lists the manifests exactly as a live run
-would, making it easy to validate the planned changes while leaving files
-untouched.
+Pass `--dry-run` to preview the same summary without writing to disk.
+Example:
+
+```text
+Dry run; would update version to 1.2.3 in 3 manifest(s):
+- Cargo.toml
+- crates/alpha/Cargo.toml
+- crates/beta/Cargo.toml
+```
 
 ### `publish`
 

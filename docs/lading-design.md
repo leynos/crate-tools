@@ -217,8 +217,8 @@ workspace graph, containing:
   (derived from `package.publish` in `Cargo.toml`).
 - `dependencies`: A list of its dependencies within the workspace. Each entry
   retains both the canonical crate name and the manifest key, so renamed
-  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched back
-  to the correct manifest entry when updating requirements.
+  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched
+  back to the correct manifest entry when updating requirements.
 - `readme_is_workspace`: A boolean flag derived from checking if
   `package.readme.workspace` is `true`.
 
@@ -294,9 +294,10 @@ lading bump <new_version> [--dry-run]
   refreshed when they point at bumped members. This keeps the workspace graph
   consistent without forcing the excluded crate to change its own version.
 - The command reports a concise summary that enumerates every manifest path on
-  its own line. The live mode prefix is `Updated version…`, while dry runs use
-  `Dry run; would update…`. When no manifest requires changes the CLI reports a
-  dedicated "No manifest changes required" message instead of rewriting files.
+  its own line. The live mode prefix is `Updated version to <version> in …`,
+  while dry runs use `Dry run; would update version to <version> in …`. When no
+  manifest requires changes the CLI reports:
+  `No manifest changes required; all versions already <version>.`
 - A `--dry-run` flag bypasses file writes entirely while still computing the
   manifest diff. This allows automation to preview the impact of a bump without
   touching the workspace.

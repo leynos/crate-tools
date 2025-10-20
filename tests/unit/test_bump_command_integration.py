@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import pathlib
 import typing as typ
 
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
 from lading.commands import bump
 from lading.workspace import WorkspaceDependency, WorkspaceGraph
-from tests.unit.conftest import (
+from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
     _CrateSpec,
     _create_alpha_crate,
@@ -22,9 +24,16 @@ from tests.unit.conftest import (
 )
 
 if typ.TYPE_CHECKING:
-    import pytest
+    from _pytest.monkeypatch import MonkeyPatch
 
-    MonkeyPatch = pytest.MonkeyPatch
+
+@dc.dataclass(frozen=True, slots=True)
+class _NoChangeScenario:
+    """Parameters describing expected output when no manifests change."""
+
+    test_id: str
+    dry_run: bool
+    expected_message: str
 
 
 def _extract_alpha_dependency_entries(
@@ -196,17 +205,42 @@ def test_run_uses_loaded_configuration_and_workspace(
     assert _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "9.9.9"
 
 
-def test_run_reports_when_versions_already_match(tmp_path: pathlib.Path) -> None:
-    """Return a descriptive message when manifests already match the target."""
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        _NoChangeScenario(
+            test_id="live",
+            dry_run=False,
+            expected_message=(
+                "No manifest changes required; all versions already 0.1.0."
+            ),
+        ),
+        _NoChangeScenario(
+            test_id="dry-run",
+            dry_run=True,
+            expected_message=(
+                "Dry run; no manifest changes required; all versions already 0.1.0."
+            ),
+        ),
+    ],
+    ids=lambda scenario: scenario.test_id,
+)
+def test_run_reports_when_versions_already_match(
+    tmp_path: pathlib.Path, scenario: _NoChangeScenario
+) -> None:
+    """Report the no-op message for both live and dry-run invocations."""
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
-    target_version = "0.1.0"
     message = bump.run(
         tmp_path,
-        target_version,
-        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+        "0.1.0",
+        options=bump.BumpOptions(
+            dry_run=scenario.dry_run,
+            configuration=configuration,
+            workspace=workspace,
+        ),
     )
-    assert message == "No manifest changes required; all versions already 0.1.0."
+    assert message == scenario.expected_message
 
 
 def test_run_dry_run_reports_changes_without_modifying_files(
@@ -239,22 +273,3 @@ def test_run_dry_run_reports_changes_without_modifying_files(
     ]
     for path in manifest_paths:
         assert path.read_text(encoding="utf-8") == original_contents[path]
-
-
-def test_run_dry_run_reports_no_changes_when_versions_match(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Dry run still reports when no manifest updates are necessary."""
-    workspace = _make_workspace(tmp_path)
-    configuration = _make_config()
-    message = bump.run(
-        tmp_path,
-        "0.1.0",
-        options=bump.BumpOptions(
-            dry_run=True, configuration=configuration, workspace=workspace
-        ),
-    )
-
-    assert (
-        message == "Dry run; no manifest changes required; all versions already 0.1.0."
-    )

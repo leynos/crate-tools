@@ -10,7 +10,11 @@ from tomlkit import parse as parse_toml
 
 from lading.commands import bump
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-from tests.unit.conftest import _load_version, _make_config, _make_workspace
+from tests.helpers.workspace_builders import (
+    _load_version,
+    _make_config,
+    _make_workspace,
+)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
