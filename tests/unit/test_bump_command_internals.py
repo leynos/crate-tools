@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import typing as typ
 
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.unit.conftest import _load_version, _make_config
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _make_test_crate_with_dependency(
@@ -68,10 +71,12 @@ def _make_workspace_with_alpha_dependency(
 
     Args:
         tmp_path: Directory where manifests will be created.
-        dependency: Tuple of (dependency_name, dependency_version) for beta's dependency.
+        dependency: Tuple of (dependency_name, dependency_version) for beta's
+            dependency.
 
     Returns:
         Tuple of (beta_crate, workspace_graph).
+
     """
     beta_crate = _make_test_crate_with_dependency(tmp_path, dependency=dependency)
 
