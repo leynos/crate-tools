@@ -615,14 +615,15 @@ def _then_dependency_requirement_step(
     )
 
 
-@then("the publish command reports the workspace path, crate count, and strip patches")
-def then_publish_reports_workspace(cli_run: dict[str, typ.Any]) -> None:
-    """Assert that the publish placeholder message mentions the workspace."""
+@then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
+def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> None:
+    """Assert that the publish command emits a publication plan summary."""
     assert cli_run["returncode"] == 0
     workspace = cli_run["workspace"]
-    stdout = cli_run["stdout"]
-    assert f"publish placeholder invoked for {workspace}" in stdout
-    assert "(crates: 1 crate, strip patches: all)" in stdout
+    lines = [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
+    assert lines[0] == f"Publish plan for {workspace}"
+    assert "Strip patch strategy: all" in lines[1]
+    assert any(line == f"- {crate_name} @ 0.1.0" for line in lines)
 
 
 @then("the CLI reports a missing configuration error")

@@ -59,7 +59,7 @@ Feature: Lading CLI scaffolding
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace
     When I invoke lading publish with that workspace
-    Then the publish command reports the workspace path, crate count, and strip patches
+    Then the publish command prints the publish plan for "alpha"
 
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
