@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
 import typing as typ
 
 import pytest
@@ -13,6 +14,17 @@ from tests.unit.conftest import _load_version, _make_config, _make_workspace
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
+
+
+@dc.dataclass(frozen=True, slots=True)
+class UpdateCrateTestParams:
+    """Parameters for test_update_crate_manifest parametrized tests."""
+
+    test_id: str
+    dependency_spec: tuple[str, str]
+    exclude_crates: tuple[str, ...]
+    expected_package_version: str
+    expected_alpha_version: str
 
 
 def _make_test_crate_with_dependency(
@@ -181,54 +193,34 @@ def test_format_manifest_path_outside_workspace(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    (
-        "test_id",
-        "dependency_spec",
-        "exclude_crates",
-        "expected_package_version",
-        "expected_alpha_version",
-    ),
+    "params",
     [
-        (
-            "excluded_crate_skips_version_bump",
-            ("alpha", "0.1.0"),
-            ("beta",),
-            "0.1.0",
-            "1.2.3",
+        UpdateCrateTestParams(
+            test_id="excluded_crate_skips_version_bump",
+            dependency_spec=("alpha", "0.1.0"),
+            exclude_crates=("beta",),
+            expected_package_version="0.1.0",
+            expected_alpha_version="1.2.3",
         ),
-        (
-            "updates_version_and_dependencies",
-            ("alpha", "^0.1.0"),
-            (),
-            "1.2.3",
-            "^1.2.3",
+        UpdateCrateTestParams(
+            test_id="updates_version_and_dependencies",
+            dependency_spec=("alpha", "^0.1.0"),
+            exclude_crates=(),
+            expected_package_version="1.2.3",
+            expected_alpha_version="^1.2.3",
         ),
     ],
-    ids=[
-        "excluded_crate_skips_version_bump",
-        "updates_version_and_dependencies",
-    ],
+    ids=lambda p: p.test_id,
 )
-def test_update_crate_manifest(
-    tmp_path: Path,
-    test_id: str,
-    dependency_spec: tuple[str, str],
-    exclude_crates: tuple[str, ...],
-    expected_package_version: str,
-    expected_alpha_version: str,
-) -> None:
+def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) -> None:
     """Crate manifest updates handle exclusions and dependency rewrites."""
-    assert test_id in {
-        "excluded_crate_skips_version_bump",
-        "updates_version_and_dependencies",
-    }
     crate, workspace = _make_workspace_with_alpha_dependency(
         tmp_path,
-        dependency=dependency_spec,
+        dependency=params.dependency_spec,
     )
     config_kwargs: dict[str, typ.Any] = {}
-    if exclude_crates:
-        config_kwargs["exclude"] = exclude_crates
+    if params.exclude_crates:
+        config_kwargs["exclude"] = params.exclude_crates
     options = bump.BumpOptions(
         configuration=_make_config(**config_kwargs),
         workspace=workspace,
@@ -242,8 +234,8 @@ def test_update_crate_manifest(
 
     assert changed is True
     package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
-    assert package_version == expected_package_version
-    assert alpha_version == expected_alpha_version
+    assert package_version == params.expected_package_version
+    assert alpha_version == params.expected_alpha_version
 
 
 def test_format_result_message_handles_changes(tmp_path: Path) -> None:
