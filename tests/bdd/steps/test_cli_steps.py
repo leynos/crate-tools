@@ -36,6 +36,32 @@ def given_workspace_directory(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@given(parsers.parse('bump.documentation.globs contains "{pattern}"'))
+def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
+    """Append ``pattern`` to the documentation glob list in ``lading.toml``."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = parse_toml(config_path.read_text(encoding="utf-8"))
+    bump_table = document.get("bump")
+    if bump_table is None:
+        bump_table = table()
+        document["bump"] = bump_table
+    documentation_table = bump_table.get("documentation")
+    if documentation_table is None:
+        documentation_table = table()
+        bump_table["documentation"] = documentation_table
+    globs_value = documentation_table.get("globs")
+    if globs_value is None:
+        globs_array = array()
+        documentation_table["globs"] = globs_array
+    elif hasattr(globs_value, "append"):
+        globs_array = globs_value
+    else:  # pragma: no cover - defensive guard for unexpected config edits
+        message = "bump.documentation.globs must be an array"
+        raise AssertionError(message)
+    globs_array.append(pattern)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given(parsers.parse('the workspace manifests record version "{version}"'))
 def given_workspace_versions_match(
     workspace_directory: Path,
@@ -119,6 +145,27 @@ def given_cargo_metadata_sample(
         exit_code=0,
         stdout=json.dumps(payload),
     )
+
+
+@given(
+    parsers.parse(
+        'the workspace README contains a TOML dependency snippet for "{crate_name}"'
+    )
+)
+def given_workspace_readme_snippet(workspace_directory: Path, crate_name: str) -> None:
+    """Write a README with a TOML fence referencing ``crate_name``."""
+    readme_path = workspace_directory / "README.md"
+    content = textwrap.dedent(
+        f"""
+        # Usage
+
+        ```toml
+        [dependencies]
+        {crate_name} = "0.1.0"
+        ```
+        """
+    ).lstrip()
+    readme_path.write_text(content, encoding="utf-8")
 
 
 @given(
@@ -421,6 +468,16 @@ def then_cli_output_lists_manifest_paths(
     assert manifest_lines == expected_lines
 
 
+@then(parsers.parse('the CLI output lists documentation path "{expected}"'))
+def then_cli_output_lists_documentation_path(
+    cli_run: dict[str, typ.Any], expected: str
+) -> None:
+    """Assert that the CLI output includes ``expected`` as a documentation line."""
+    assert cli_run["returncode"] == 0
+    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
+    assert expected in stdout_lines
+
+
 @then(parsers.parse("the CLI exits with code {expected:d}"))
 def then_cli_exit_code(cli_run: dict[str, typ.Any], expected: int) -> None:
     """Assert that the CLI terminated with ``expected`` exit code."""
@@ -455,6 +512,17 @@ def then_crate_manifest_version(
     manifest_path = cli_run["workspace"] / "crates" / crate_name / "Cargo.toml"
     document = parse_toml(manifest_path.read_text(encoding="utf-8"))
     assert document["package"]["version"] == version
+
+
+@then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))
+def then_documentation_contains(
+    cli_run: dict[str, typ.Any], relative_path: str, expected: str
+) -> None:
+    """Assert that ``expected`` appears in the specified documentation file."""
+    doc_path = cli_run["workspace"] / relative_path
+    normalised_expected = expected.replace(r"\"", '"')
+    contents = doc_path.read_text(encoding="utf-8")
+    assert normalised_expected in contents
 
 
 def _extract_dependency_requirement(entry: object) -> str:

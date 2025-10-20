@@ -50,6 +50,9 @@ An example minimal configuration looks like:
 ```toml
 [bump]
 
+[bump.documentation]
+globs = ["README.md", "docs/**/*.md"]
+
 [publish]
 strip_patches = "all"
 ```
@@ -88,9 +91,12 @@ Running the command updates:
   versions were bumped. Existing requirement operators such as `^` or `~` are
   preserved, and other inline options (for example `path = "../crate"`) remain
   untouched.
+- Markdown files matching any glob configured under `bump.documentation.globs`.
+  Each TOML fence in those files is parsed with `tomlkit` so that `[package]`,
+  `[workspace.package]`, and dependency entries that name workspace crates
+  inherit the new version while preserving indentation and fence metadata.
 
-`lading` prints a short summary that lists every manifest it touched. For
-example:
+`lading` prints a short summary that lists every file it touched. For example:
 
 ```text
 Updated version to 1.2.3 in 3 manifest(s):
@@ -99,10 +105,11 @@ Updated version to 1.2.3 in 3 manifest(s):
 - crates/beta/Cargo.toml
 ```
 
-All paths are relative to the workspace root. This lets release automation
-assert the change without parsing files directly.
-When every manifest already records the requested version, the CLI reports:
-`No manifest changes required; all versions already 1.2.3.`
+All paths are relative to the workspace root. Documentation files appear in the
+same list with a `(documentation)` suffix, and the summary prefix reports both
+manifest and documentation counts. When every manifest already records the
+requested version, the CLI reports: `No manifest changes required; all versions
+already 1.2.3.`
 
 Pass `--dry-run` to preview the same summary without writing to disk.
 Example:

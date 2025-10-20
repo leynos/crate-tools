@@ -39,6 +39,15 @@ Feature: Lading CLI scaffolding
     And the dependency "beta:alpha@dev-dependencies" has requirement "~1.2.3"
     And the dependency "beta:alpha@build-dependencies" has requirement "1.2.3"
 
+  Scenario: Bumping updates documentation TOML fences
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains a TOML dependency snippet for "alpha"
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the documentation file "README.md" contains "alpha = \"1.2.3\""
+    And the CLI output lists documentation path "- README.md (documentation)"
+
   Scenario: Bumping workspace versions when already up to date
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

@@ -129,9 +129,18 @@ def _load_version(path: Path, table: tuple[str, ...]) -> str:
         raise KeyError(message) from error
 
 
-def _make_config(**kwargs: str | tuple[str, ...]) -> config_module.LadingConfig:
+def _make_config(
+    *,
+    exclude: tuple[str, ...] = (),
+    documentation_globs: tuple[str, ...] | None = None,
+) -> config_module.LadingConfig:
     """Construct a configuration instance for tests."""
-    bump_config = config_module.BumpConfig.from_mapping(dict(kwargs))
+    bump_mapping: dict[str, typ.Any] = {}
+    if exclude:
+        bump_mapping["exclude"] = exclude
+    if documentation_globs is not None:
+        bump_mapping["documentation"] = {"globs": documentation_globs}
+    bump_config = config_module.BumpConfig.from_mapping(bump_mapping)
     return config_module.LadingConfig(bump=bump_config)
 
 

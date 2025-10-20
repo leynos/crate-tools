@@ -120,7 +120,7 @@ handling workspace READMEs.
 
 **Tasks:**
 
-- [ ] **Implement Configurable Documentation Updates:**
+- [x] **Implement Configurable Documentation Updates:**
 
   - **Outcome:** The `bump` command updates version numbers within TOML code
     fences in documentation files, using new configuration introduced alongside

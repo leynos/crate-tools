@@ -33,23 +33,50 @@ class MissingConfigurationError(ConfigurationError):
 
 
 @dc.dataclass(frozen=True, slots=True)
+class DocumentationConfig:
+    """Configuration for documentation updates triggered by ``bump``."""
+
+    globs: tuple[str, ...] = ()
+
+    @classmethod
+    def from_mapping(
+        cls, mapping: cabc.Mapping[str, typ.Any] | None
+    ) -> DocumentationConfig:
+        """Create a :class:`DocumentationConfig` from a TOML table mapping."""
+        if mapping is None:
+            return cls()
+        unknown = set(mapping) - {"globs"}
+        if unknown:
+            joined = ", ".join(sorted(unknown))
+            message = f"Unknown bump.documentation option(s): {joined}."
+            raise ConfigurationError(message)
+        return cls(
+            globs=_string_tuple(mapping.get("globs"), "bump.documentation.globs"),
+        )
+
+
+@dc.dataclass(frozen=True, slots=True)
 class BumpConfig:
     """Settings for the ``bump`` command."""
 
     exclude: tuple[str, ...] = ()
+    documentation: DocumentationConfig = dc.field(default_factory=DocumentationConfig)
 
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any] | None) -> BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        unknown = set(mapping) - {"exclude"}
+        unknown = set(mapping) - {"exclude", "documentation"}
         if unknown:
             joined = ", ".join(sorted(unknown))
             message = f"Unknown bump option(s): {joined}."
             raise ConfigurationError(message)
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
+            documentation=DocumentationConfig.from_mapping(
+                _optional_mapping(mapping.get("documentation"), "bump.documentation")
+            ),
         )
 
 

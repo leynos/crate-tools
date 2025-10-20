@@ -11,20 +11,23 @@ import typing as typ
 from contextlib import suppress
 from pathlib import Path
 
+from markdown_it import MarkdownIt
 from tomlkit import parse as parse_toml
 from tomlkit import string
+from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import InlineTable, Item, Table
 
 from lading import config as config_module
 from lading.utils import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
+    from markdown_it.token import Token
     from tomlkit.toml_document import TOMLDocument
 
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 else:  # pragma: no cover - provide runtime placeholders for type checking imports
-    LadingConfig = WorkspaceCrate = WorkspaceGraph = TOMLDocument = typ.Any
+    LadingConfig = WorkspaceCrate = WorkspaceGraph = TOMLDocument = Token = typ.Any
 
 _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
     ("package",),
@@ -104,6 +107,16 @@ def run(
         ):
             changed_manifests.add(crate.manifest_path)
 
+    documentation_paths = _resolve_documentation_targets(
+        root_path, configuration.bump.documentation
+    )
+    changed_documents = _update_documentation_files(
+        documentation_paths,
+        target_version,
+        updated_crate_names,
+        dry_run=base_options.dry_run,
+    )
+
     ordered_manifests = tuple(
         sorted(
             changed_manifests,
@@ -111,8 +124,11 @@ def run(
         )
     )
 
+    ordered_documents = tuple(sorted(changed_documents, key=str))
+
     return _format_result_message(
         ordered_manifests,
+        ordered_documents,
         target_version,
         dry_run=base_options.dry_run,
         workspace_root=root_path,
@@ -152,13 +168,14 @@ def _update_crate_manifest(
 
 def _format_result_message(
     changed_manifests: typ.Sequence[Path],
+    changed_documents: typ.Sequence[Path],
     target_version: str,
     *,
     dry_run: bool,
     workspace_root: Path,
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if not changed_manifests:
+    if not changed_manifests and not changed_documents:
         if dry_run:
             return (
                 "Dry run; no manifest changes required; "
@@ -166,17 +183,24 @@ def _format_result_message(
             )
         return f"No manifest changes required; all versions already {target_version}."
 
-    count = len(changed_manifests)
+    parts: list[str] = []
+    if changed_manifests:
+        parts.append(f"{len(changed_manifests)} manifest(s)")
+    if changed_documents:
+        parts.append(f"{len(changed_documents)} documentation file(s)")
+    description = parts[0] if len(parts) == 1 else " and ".join(parts)
     if dry_run:
-        header = (
-            f"Dry run; would update version to {target_version} in {count} manifest(s):"
-        )
+        header = f"Dry run; would update version to {target_version} in {description}:"
     else:
-        header = f"Updated version to {target_version} in {count} manifest(s):"
+        header = f"Updated version to {target_version} in {description}:"
     formatted_paths = [
         f"- {_format_manifest_path(manifest_path, workspace_root)}"
         for manifest_path in changed_manifests
     ]
+    formatted_paths.extend(
+        f"- {_format_manifest_path(document_path, workspace_root)} (documentation)"
+        for document_path in changed_documents
+    )
     return "\n".join([header, *formatted_paths])
 
 
@@ -403,6 +427,164 @@ def _compose_requirement(existing: str, target_version: str) -> str:
     return f"{prefix}{target_version}"
 
 
+def _resolve_documentation_targets(
+    workspace_root: Path, documentation: config_module.DocumentationConfig
+) -> tuple[Path, ...]:
+    """Return documentation files that should be scanned for version updates."""
+    patterns = documentation.globs
+    if not patterns:
+        return ()
+
+    resolved: dict[Path, None] = {}
+    for pattern in patterns:
+        for candidate in workspace_root.glob(pattern):
+            if candidate.is_file():
+                resolved.setdefault(candidate, None)
+    return tuple(resolved)
+
+
+def _update_documentation_files(
+    documentation_paths: typ.Iterable[Path],
+    target_version: str,
+    updated_crates: typ.Collection[str],
+    *,
+    dry_run: bool,
+) -> set[Path]:
+    """Rewrite documentation TOML fences that mention workspace crates."""
+    changed: set[Path] = set()
+    dependency_targets = {name for name in updated_crates if name}
+    for doc_path in documentation_paths:
+        original_text = doc_path.read_text(encoding="utf-8")
+        updated_text, snippet_changed = _rewrite_markdown_toml_fences(
+            original_text, dependency_targets, target_version
+        )
+        if not snippet_changed:
+            continue
+        changed.add(doc_path)
+        if not dry_run:
+            _write_atomic_text(doc_path, updated_text)
+    return changed
+
+
+def _rewrite_markdown_toml_fences(
+    markdown_text: str,
+    dependency_targets: typ.Collection[str],
+    target_version: str,
+) -> tuple[str, bool]:
+    """Rewrite TOML fences for ``dependency_targets`` within Markdown text."""
+    changed = False
+
+    def _apply(snippet: str) -> str:
+        nonlocal changed
+        replacement, snippet_changed = _update_toml_snippet_versions(
+            snippet, dependency_targets, target_version
+        )
+        if snippet_changed:
+            changed = True
+        return replacement
+
+    updated = _replace_markdown_fences(markdown_text, "toml", _apply)
+    return updated, changed
+
+
+def _replace_markdown_fences(
+    markdown_text: str,
+    language: str,
+    transform: typ.Callable[[str], str],
+) -> str:
+    """Replace fenced code blocks of ``language`` with ``transform``."""
+    parser = MarkdownIt("commonmark")
+    tokens = parser.parse(markdown_text)
+    lines = markdown_text.splitlines(keepends=True)
+    output: list[str] = []
+    last_index = 0
+    for token in tokens:
+        if not _token_matches_language(token, language) or token.map is None:
+            continue
+        start, end = token.map
+        output.append("".join(lines[last_index:start]))
+        output.append(_render_fence(token, lines, language, transform))
+        last_index = end
+    output.append("".join(lines[last_index:]))
+    return "".join(output)
+
+
+def _token_matches_language(token: Token, language: str) -> bool:
+    """Return ``True`` when ``token`` is a fence with ``language``."""
+    if token.type != "fence":
+        return False
+    info = (token.info or "").split()
+    info_lang = info[0].lower() if info else ""
+    return info_lang == language.lower()
+
+
+def _render_fence(
+    token: Token,
+    lines: list[str],
+    language: str,
+    transform: typ.Callable[[str], str],
+) -> str:
+    """Return a rewritten fence for ``token`` using ``transform``."""
+    if token.map is None:
+        message = "Fence token missing map data"
+        raise ValueError(message)
+    start, _ = token.map
+    fence_marker = token.markup or "```"
+    indent = _extract_fence_indent(lines[start], fence_marker)
+    info = token.info or language
+    original_body = token.content
+    new_body = transform(original_body)
+    suffix_match = re.search(r"(\r?\n+)$", original_body)
+    suffix = suffix_match.group(1) if suffix_match else ""
+    body_text = new_body.rstrip("\r\n") + suffix
+    indented_body = "".join(
+        f"{indent}{line}" for line in body_text.splitlines(keepends=True)
+    )
+    return f"{indent}{fence_marker}{info}\n{indented_body}{indent}{fence_marker}\n"
+
+
+def _extract_fence_indent(line: str, fence_marker: str) -> str:
+    """Return indentation preceding ``fence_marker`` in ``line``."""
+    position = line.find(fence_marker)
+    return "" if position < 0 else line[:position]
+
+
+def _update_toml_snippet_versions(
+    snippet: str,
+    dependency_targets: typ.Collection[str],
+    target_version: str,
+) -> tuple[str, bool]:
+    """Return a TOML snippet with dependency versions rewritten."""
+    try:
+        document = parse_toml(snippet)
+    except TOMLKitError:
+        return snippet, False
+
+    changed = False
+    if _assign_version(_select_table(document, ("package",)), target_version):
+        changed = True
+    if _assign_version(
+        _select_table(document, ("workspace", "package")), target_version
+    ):
+        changed = True
+
+    if dependency_targets:
+        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+            table = _select_table(document, (section,))
+            if table is None:
+                continue
+            if _update_dependency_table(table, dependency_targets, target_version):
+                changed = True
+
+    if not changed:
+        return snippet, False
+
+    suffix_match = re.search(r"((?:\r?\n)*)$", snippet)
+    newline_suffix = suffix_match.group(1) if suffix_match else ""
+    rendered = document.as_string().rstrip("\r\n")
+    return (f"{rendered}{newline_suffix}" if newline_suffix else rendered, True)
+
+
 def _parse_manifest(manifest_path: Path) -> TOMLDocument:
     """Load ``manifest_path`` into a :class:`tomlkit` document."""
     content = manifest_path.read_text(encoding="utf-8")
@@ -452,15 +634,15 @@ def _value_matches(value: object, expected: str) -> bool:
     return value == expected
 
 
-def _write_atomic_text(manifest_path: Path, content: str) -> None:
-    """Persist ``content`` to ``manifest_path`` atomically using UTF-8 encoding."""
-    dirpath = manifest_path.parent
+def _write_atomic_text(file_path: Path, content: str) -> None:
+    """Persist ``content`` to ``file_path`` atomically using UTF-8 encoding."""
+    dirpath = file_path.parent
     existing_mode: int | None = None
     with suppress(FileNotFoundError):
-        existing_mode = manifest_path.stat().st_mode
+        existing_mode = file_path.stat().st_mode
     fd, tmp_path = tempfile.mkstemp(
         dir=dirpath,
-        prefix=f"{manifest_path.name}.",
+        prefix=f"{file_path.name}.",
         text=True,
     )
     try:
@@ -469,7 +651,7 @@ def _write_atomic_text(manifest_path: Path, content: str) -> None:
                 os.fchmod(fd, existing_mode)  # not available on Windows
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
-        Path(tmp_path).replace(manifest_path)
+        Path(tmp_path).replace(file_path)
     finally:
         with suppress(FileNotFoundError):
             Path(tmp_path).unlink()

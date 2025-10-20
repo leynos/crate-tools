@@ -308,6 +308,21 @@ lading bump <new_version> [--dry-run]
   documentation rewriting arrives in Step 2.2 to avoid implying unsupported
   behaviour.
 
+### Implementation notes (Step 2.2)
+
+- `bump.documentation.globs` accepts glob patterns relative to the workspace
+  root. Each pattern expands to a list of Markdown files that should have their
+  TOML fences rewritten during a bump.
+- Markdown fences are parsed with `markdown-it-py` so indentation and
+  language info strings are preserved. The fence bodies are parsed with
+  `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency entries
+  that reference workspace crates. Existing requirement operators and inline
+  trivia remain intact.
+- Documentation rewrites honour `--dry-run`; the command reports the files but
+  skips writing to disk. The CLI summary now reports both manifest and
+  documentation counts, and documentation entries are suffixed with
+  `(documentation)` for clarity.
+
 ## 4. `publish` Subcommand Design
 
 The `publish` command orchestrates the publication of crates to the designated

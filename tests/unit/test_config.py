@@ -27,6 +27,9 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
         [bump]
         exclude = ["internal"]
 
+        [bump.documentation]
+        globs = ["README.md", "docs/**/*.md"]
+
         [publish]
         exclude = ["examples"]
         order = ["core"]
@@ -37,6 +40,10 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
     configuration = config_module.load_configuration(tmp_path)
 
     assert configuration.bump.exclude == ("internal",)
+    assert configuration.bump.documentation.globs == (
+        "README.md",
+        "docs/**/*.md",
+    )
     assert configuration.publish.exclude == ("examples",)
     assert configuration.publish.order == ("core",)
     assert configuration.publish.strip_patches == "all"
@@ -58,6 +65,16 @@ def test_load_configuration_parses_values(tmp_path: Path) -> None:
             strip_patches = "unexpected"
             """,
             id="invalid_strip_patches_string",
+        ),
+        pytest.param(
+            """
+            [bump]
+            exclude = []
+
+            [bump.documentation]
+            unknown = "value"
+            """,
+            id="documentation_unknown",
         ),
         pytest.param(
             """
@@ -92,6 +109,7 @@ def test_load_configuration_applies_defaults(tmp_path: Path) -> None:
     configuration = config_module.load_configuration(tmp_path)
 
     assert configuration.publish.strip_patches == "per-crate"
+    assert configuration.bump.documentation.globs == ()
 
 
 def test_load_configuration_requires_file(tmp_path: Path) -> None:

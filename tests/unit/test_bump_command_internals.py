@@ -222,11 +222,8 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         tmp_path,
         dependency=params.dependency_spec,
     )
-    config_kwargs: dict[str, typ.Any] = {}
-    if params.exclude_crates:
-        config_kwargs["exclude"] = params.exclude_crates
     options = bump.BumpOptions(
-        configuration=_make_config(**config_kwargs),
+        configuration=_make_config(exclude=params.exclude_crates),
         workspace=workspace,
     )
 
@@ -249,14 +246,20 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         workspace_root / "Cargo.toml",
         workspace_root / "member" / "Cargo.toml",
     ]
+    documentation_paths = [workspace_root / "README.md"]
     assert (
         bump._format_result_message(
-            [], "1.2.3", dry_run=False, workspace_root=workspace_root
+            [],
+            [],
+            "1.2.3",
+            dry_run=False,
+            workspace_root=workspace_root,
         )
         == "No manifest changes required; all versions already 1.2.3."
     )
     assert bump._format_result_message(
         manifest_paths,
+        [],
         "4.5.6",
         dry_run=False,
         workspace_root=workspace_root,
@@ -267,6 +270,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     ]
     assert bump._format_result_message(
         manifest_paths,
+        [],
         "4.5.6",
         dry_run=True,
         workspace_root=workspace_root,
@@ -274,6 +278,18 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "Dry run; would update version to 4.5.6 in 2 manifest(s):",
         "- Cargo.toml",
         "- member/Cargo.toml",
+    ]
+    assert bump._format_result_message(
+        manifest_paths,
+        documentation_paths,
+        "7.8.9",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+        "- README.md (documentation)",
     ]
 
 

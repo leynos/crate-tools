@@ -135,6 +135,28 @@ def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> Non
     assert build_entry["path"].value == "../alpha"
 
 
+def test_run_updates_documentation_snippets(tmp_path: pathlib.Path) -> None:
+    """Documentation TOML fences are rewritten to reference the new version."""
+    workspace = _make_workspace(tmp_path)
+    readme_path = tmp_path / "README.md"
+    readme_path.write_text(
+        """# Sample\n\n```toml\n[dependencies]\nalpha = \"0.1.0\"\n```\n""",
+        encoding="utf-8",
+    )
+    configuration = _make_config(documentation_globs=("README.md",))
+
+    message = bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(configuration=configuration, workspace=workspace),
+    )
+
+    assert "documentation file(s)" in message
+    assert "- README.md (documentation)" in message.splitlines()
+    updated_readme = readme_path.read_text(encoding="utf-8")
+    assert 'alpha = "1.2.3"' in updated_readme
+
+
 def test_run_updates_renamed_internal_dependency_versions(
     tmp_path: pathlib.Path,
 ) -> None:
