@@ -6,6 +6,7 @@ import dataclasses as dc
 import os
 import re
 import tempfile
+import types
 import typing as typ
 from contextlib import suppress
 from pathlib import Path
@@ -47,8 +48,8 @@ class BumpOptions:
     dry_run: bool = False
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
-    dependency_sections: typ.Mapping[str, typ.Collection[str]] | None = dc.field(
-        default=None
+    dependency_sections: typ.Mapping[str, typ.Collection[str]] = dc.field(
+        default_factory=lambda: types.MappingProxyType({})
     )
 
 
@@ -80,11 +81,12 @@ def run(
         crate.name for crate in workspace.crates if crate.name not in excluded
     }
 
-    changed_manifests: list[Path] = []
+    changed_manifests: set[Path] = set()
     workspace_manifest = root_path / "Cargo.toml"
     workspace_dependency_sections = _workspace_dependency_sections(updated_crate_names)
     workspace_options = dc.replace(
-        base_options, dependency_sections=workspace_dependency_sections
+        base_options,
+        dependency_sections=_freeze_dependency_sections(workspace_dependency_sections),
     )
     if _update_manifest(
         workspace_manifest,
@@ -92,20 +94,25 @@ def run(
         target_version,
         workspace_options,
     ):
-        changed_manifests.append(workspace_manifest)
+        changed_manifests.add(workspace_manifest)
 
-    changed_manifests.extend(
-        crate.manifest_path
-        for crate in workspace.crates
+    for crate in workspace.crates:
         if _update_crate_manifest(
             crate,
             target_version,
             base_options,
+        ):
+            changed_manifests.add(crate.manifest_path)
+
+    ordered_manifests = tuple(
+        sorted(
+            changed_manifests,
+            key=lambda path: (path != workspace_manifest, str(path)),
         )
     )
 
     return _format_result_message(
-        changed_manifests,
+        ordered_manifests,
         target_version,
         dry_run=base_options.dry_run,
         workspace_root=root_path,
@@ -131,7 +138,10 @@ def _update_crate_manifest(
     if _should_skip_crate_update(selectors, dependency_sections):
         return False
 
-    crate_options = dc.replace(options, dependency_sections=dependency_sections)
+    crate_options = dc.replace(
+        options,
+        dependency_sections=_freeze_dependency_sections(dependency_sections),
+    )
     return _update_manifest(
         crate.manifest_path,
         selectors,
@@ -209,9 +219,7 @@ def _determine_package_selectors(
         Package selectors tuple, or empty tuple if crate is excluded.
 
     """
-    if crate_name in excluded:
-        return ()
-    return (("package",),)
+    return () if crate_name in excluded else (("package",),)
 
 
 def _should_skip_crate_update(
@@ -225,6 +233,16 @@ def _should_skip_crate_update(
 
     """
     return not selectors and not dependency_sections
+
+
+def _freeze_dependency_sections(
+    sections: dict[str, typ.Collection[str]],
+) -> typ.Mapping[str, typ.Collection[str]]:
+    """Return an immutable mapping for dependency sections."""
+    if not sections:
+        return types.MappingProxyType({})
+    frozen_sections = {key: tuple(sorted(names)) for key, names in sections.items()}
+    return types.MappingProxyType(frozen_sections)
 
 
 def _update_manifest(

@@ -407,6 +407,20 @@ def then_command_reports_dry_run(
     assert f"would update version to {version}" in stdout
 
 
+@then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
+def then_cli_output_lists_manifest_paths(
+    cli_run: dict[str, typ.Any],
+    first: str,
+    second: str,
+) -> None:
+    """Assert that the CLI output lists the expected manifest paths."""
+    assert cli_run["returncode"] == 0
+    expected_lines = [first, second]
+    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
+    manifest_lines = [line for line in stdout_lines if line.startswith("- ")]
+    assert manifest_lines == expected_lines
+
+
 @then(parsers.parse("the CLI exits with code {expected:d}"))
 def then_cli_exit_code(cli_run: dict[str, typ.Any], expected: int) -> None:
     """Assert that the CLI terminated with ``expected`` exit code."""

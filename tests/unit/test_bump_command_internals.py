@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import typing as typ
 
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-from tests.unit.conftest import _load_version, _make_config
+from tests.unit.conftest import _load_version, _make_config, _make_workspace
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -122,6 +123,61 @@ def _parse_manifest_versions(
     package_version = document["package"]["version"]
     alpha_version = document["dependencies"]["alpha"].value
     return package_version, alpha_version
+
+
+def test_validate_bump_options_requires_configuration_and_workspace() -> None:
+    """Validation raises when mandatory options are missing."""
+    with pytest.raises(ValueError, match="must supply configuration and workspace"):
+        bump._validate_bump_options(bump.BumpOptions())
+
+
+def test_validate_bump_options_returns_configuration_and_workspace(
+    tmp_path: Path,
+) -> None:
+    """Validation succeeds when both configuration and workspace are present."""
+    configuration = _make_config()
+    workspace = _make_workspace(tmp_path)
+    options = bump.BumpOptions(configuration=configuration, workspace=workspace)
+    assert bump._validate_bump_options(options) == (configuration, workspace)
+
+
+def test_determine_package_selectors_respects_exclusions() -> None:
+    """Excluded crates produce no package selectors."""
+    assert bump._determine_package_selectors("beta", {"beta"}) == ()
+
+
+def test_determine_package_selectors_includes_package_for_active_crates() -> None:
+    """Active crates receive the package selector tuple."""
+    assert bump._determine_package_selectors("beta", set()) == (("package",),)
+
+
+def test_should_skip_crate_update_requires_selectors_or_dependencies() -> None:
+    """Skipping occurs only when both selectors and dependency sections are empty."""
+    assert bump._should_skip_crate_update((), {}) is True
+    assert (
+        bump._should_skip_crate_update((("package",),), {"dependencies": ("alpha",)})
+        is False
+    )
+
+
+def test_format_manifest_path_relative(tmp_path: Path) -> None:
+    """Paths inside the workspace root are displayed relative to it."""
+    workspace_root = tmp_path
+    manifest_path = workspace_root / "Cargo.toml"
+    manifest_path.write_text("", encoding="utf-8")
+    assert bump._format_manifest_path(manifest_path, workspace_root) == "Cargo.toml"
+
+
+def test_format_manifest_path_outside_workspace(tmp_path: Path) -> None:
+    """Paths outside the workspace remain absolute for clarity."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    manifest_path = tmp_path / "external" / "Cargo.toml"
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("", encoding="utf-8")
+    assert bump._format_manifest_path(manifest_path, workspace_root) == str(
+        manifest_path
+    )
 
 
 def test_update_crate_manifest_skips_version_bump_for_excluded_crate(

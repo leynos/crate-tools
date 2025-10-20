@@ -4,6 +4,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     When I invoke lading bump 1.2.3 with that workspace
     Then the bump command reports manifest updates for "1.2.3"
+    And the CLI output lists manifest paths "- Cargo.toml" and "- crates/alpha/Cargo.toml"
     And the workspace manifest version is "1.2.3"
     And the crate "alpha" manifest version is "1.2.3"
 
@@ -12,6 +13,7 @@ Feature: Lading CLI scaffolding
     And cargo metadata describes a sample workspace
     When I invoke lading bump 1.2.3 with that workspace using --dry-run
     Then the bump command reports a dry-run plan for "1.2.3"
+    And the CLI output lists manifest paths "- Cargo.toml" and "- crates/alpha/Cargo.toml"
     And the workspace manifest version is "0.1.0"
     And the crate "alpha" manifest version is "0.1.0"
 

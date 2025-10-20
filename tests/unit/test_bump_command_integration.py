@@ -27,6 +27,17 @@ if typ.TYPE_CHECKING:
     MonkeyPatch = pytest.MonkeyPatch
 
 
+def _extract_alpha_dependency_entries(
+    manifest_path: pathlib.Path,
+) -> tuple[str, object, object]:
+    """Return the alpha dependency entries across manifest sections."""
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    dependency = document["dependencies"]["alpha"].value
+    dev_entry = document["dev-dependencies"]["alpha"]
+    build_entry = document["build-dependencies"]["alpha"]
+    return dependency, dev_entry, build_entry
+
+
 def test_run_updates_workspace_and_members(tmp_path: pathlib.Path) -> None:
     """`bump.run` updates the workspace and member manifest versions."""
     workspace = _make_workspace(tmp_path)
@@ -105,12 +116,12 @@ def test_run_updates_internal_dependency_versions(tmp_path: pathlib.Path) -> Non
         options=bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    beta_document = parse_toml(beta_crate.manifest_path.read_text(encoding="utf-8"))
-    assert beta_document["dependencies"]["alpha"].value == "^1.2.3"
-    dev_entry = beta_document["dev-dependencies"]["alpha"]
+    dependency_version, dev_entry, build_entry = _extract_alpha_dependency_entries(
+        beta_crate.manifest_path
+    )
+    assert dependency_version == "^1.2.3"
     assert dev_entry["version"].value == "~1.2.3"
     assert dev_entry["path"].value == "../alpha"
-    build_entry = beta_document["build-dependencies"]["alpha"]
     assert build_entry["version"].value == "1.2.3"
     assert build_entry["path"].value == "../alpha"
 
