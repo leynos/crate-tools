@@ -293,11 +293,14 @@ lading bump <new_version> [--dry-run]
 - Crates excluded via `bump.exclude` still have their dependency requirements
   refreshed when they point at bumped members. This keeps the workspace graph
   consistent without forcing the excluded crate to change its own version.
-- The command reports a concise summary
-  (`Updated version to … in N manifest(s).`) so callers can assert success
-  without inspecting the filesystem. When no manifest requires changes, it
-  reports a dedicated "No manifest changes required" message instead of
-  rewriting files.
+- The command reports a concise summary that enumerates every manifest path on
+  its own line. The live mode prefix is `Updated version to <version> in …`,
+  while dry runs use `Dry run; would update version to <version> in …`. When no
+  manifest requires changes the CLI reports:
+  `No manifest changes required; all versions already <version>.`
+- A `--dry-run` flag bypasses file writes entirely while still computing the
+  manifest diff. This allows automation to preview the impact of a bump without
+  touching the workspace.
 - Version arguments are validated at the CLI layer before the workspace model
   loads. Invalid formats raise a user-facing error without touching the
   filesystem, while values may include optional pre-release and build metadata.

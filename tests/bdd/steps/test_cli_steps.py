@@ -352,6 +352,19 @@ def when_invoke_lading_bump(
     return _run_cli(repo_root, workspace_directory, "bump", version)
 
 
+@when(
+    parsers.parse("I invoke lading bump {version} with that workspace using --dry-run"),
+    target_fixture="cli_run",
+)
+def when_invoke_lading_bump_dry_run(
+    version: str,
+    workspace_directory: Path,
+    repo_root: Path,
+) -> dict[str, typ.Any]:
+    """Execute the bump CLI in dry-run mode via ``python -m``."""
+    return _run_cli(repo_root, workspace_directory, "bump", version, "--dry-run")
+
+
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
 def when_invoke_lading_publish(
     workspace_directory: Path,
@@ -380,6 +393,32 @@ def then_command_reports_no_changes(
     stdout = cli_run["stdout"]
     assert "No manifest changes required" in stdout
     assert f"already {version}" in stdout
+
+
+@then(parsers.parse('the bump command reports a dry-run plan for "{version}"'))
+def then_command_reports_dry_run(
+    cli_run: dict[str, typ.Any],
+    version: str,
+) -> None:
+    """Assert that the bump command reports the dry-run summary."""
+    assert cli_run["returncode"] == 0
+    stdout = cli_run["stdout"]
+    assert "Dry run;" in stdout
+    assert f"would update version to {version}" in stdout
+
+
+@then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
+def then_cli_output_lists_manifest_paths(
+    cli_run: dict[str, typ.Any],
+    first: str,
+    second: str,
+) -> None:
+    """Assert that the CLI output lists the expected manifest paths."""
+    assert cli_run["returncode"] == 0
+    expected_lines = [first, second]
+    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
+    manifest_lines = [line for line in stdout_lines if line.startswith("- ")]
+    assert manifest_lines == expected_lines
 
 
 @then(parsers.parse("the CLI exits with code {expected:d}"))
