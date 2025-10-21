@@ -70,6 +70,48 @@ def plan_publication(
     )
 
 
+def _format_publishable_section(crates: tuple[WorkspaceCrate, ...]) -> list[str]:
+    """Return formatted lines describing crates scheduled for publication."""
+    if not crates:
+        return ["Crates to publish: none"]
+
+    lines = [f"Crates to publish ({len(crates)}):"]
+    lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
+    return lines
+
+
+def _format_skipped_manifest_section(crates: tuple[WorkspaceCrate, ...]) -> list[str]:
+    """Return formatted lines for crates skipped via manifest settings."""
+    if not crates:
+        return []
+
+    lines = ["Skipped (publish = false):"]
+    lines.extend(f"- {crate.name}" for crate in crates)
+    return lines
+
+
+def _format_skipped_configuration_section(
+    crates: tuple[WorkspaceCrate, ...],
+) -> list[str]:
+    """Return formatted lines for crates skipped through configuration."""
+    if not crates:
+        return []
+
+    lines = ["Skipped via publish.exclude:"]
+    lines.extend(f"- {crate.name}" for crate in crates)
+    return lines
+
+
+def _format_missing_exclusions_section(names: tuple[str, ...]) -> list[str]:
+    """Return formatted lines for misconfigured publish exclusions."""
+    if not names:
+        return []
+
+    lines = ["Configured exclusions not found in workspace:"]
+    lines.extend(f"- {name}" for name in names)
+    return lines
+
+
 def _format_plan(
     plan: PublishPlan, *, strip_patches: config_module.StripPatchesSetting
 ) -> str:
@@ -79,23 +121,12 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    if plan.publishable:
-        lines.append(f"Crates to publish ({len(plan.publishable)}):")
-        lines.extend(f"- {crate.name} @ {crate.version}" for crate in plan.publishable)
-    else:
-        lines.append("Crates to publish: none")
-
-    if plan.skipped_manifest:
-        lines.append("Skipped (publish = false):")
-        lines.extend(f"- {crate.name}" for crate in plan.skipped_manifest)
-
-    if plan.skipped_configuration:
-        lines.append("Skipped via publish.exclude:")
-        lines.extend(f"- {crate.name}" for crate in plan.skipped_configuration)
-
-    if plan.missing_configuration_exclusions:
-        lines.append("Configured exclusions not found in workspace:")
-        lines.extend(f"- {name}" for name in plan.missing_configuration_exclusions)
+    lines.extend(_format_publishable_section(plan.publishable))
+    lines.extend(_format_skipped_manifest_section(plan.skipped_manifest))
+    lines.extend(_format_skipped_configuration_section(plan.skipped_configuration))
+    lines.extend(
+        _format_missing_exclusions_section(plan.missing_configuration_exclusions)
+    )
 
     return "\n".join(lines)
 
