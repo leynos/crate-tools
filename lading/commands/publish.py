@@ -14,6 +14,8 @@ if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
+T = typ.TypeVar("T")
+
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishPlan:
@@ -45,7 +47,7 @@ def plan_publication(
     skipped_manifest: list[WorkspaceCrate] = []
     skipped_configuration: list[WorkspaceCrate] = []
 
-    workspace_crates = tuple(workspace.crates)
+    workspace_crates = tuple(sorted(workspace.crates, key=lambda crate: crate.name))
     crate_names = {crate.name for crate in workspace_crates}
 
     for crate in workspace_crates:
@@ -61,55 +63,36 @@ def plan_publication(
         name for name in configured_exclusions if name not in crate_names
     )
 
+    ordered_publishable = tuple(sorted(publishable, key=lambda crate: crate.name))
+    ordered_skipped_manifest = tuple(
+        sorted(skipped_manifest, key=lambda crate: crate.name)
+    )
+    ordered_skipped_configuration = tuple(
+        sorted(skipped_configuration, key=lambda crate: crate.name)
+    )
+
     return PublishPlan(
         workspace_root=root_path,
-        publishable=tuple(publishable),
-        skipped_manifest=tuple(skipped_manifest),
-        skipped_configuration=tuple(skipped_configuration),
+        publishable=ordered_publishable,
+        skipped_manifest=ordered_skipped_manifest,
+        skipped_configuration=ordered_skipped_configuration,
         missing_configuration_exclusions=missing_exclusions,
     )
 
 
-def _format_publishable_section(crates: tuple[WorkspaceCrate, ...]) -> list[str]:
-    """Return formatted lines describing crates scheduled for publication."""
-    if not crates:
-        return ["Crates to publish: none"]
-
-    lines = [f"Crates to publish ({len(crates)}):"]
-    lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
-    return lines
-
-
-def _format_skipped_manifest_section(crates: tuple[WorkspaceCrate, ...]) -> list[str]:
-    """Return formatted lines for crates skipped via manifest settings."""
-    if not crates:
-        return []
-
-    lines = ["Skipped (publish = false):"]
-    lines.extend(f"- {crate.name}" for crate in crates)
-    return lines
-
-
-def _format_skipped_configuration_section(
-    crates: tuple[WorkspaceCrate, ...],
+def _format_section(
+    items: tuple[T, ...],
+    *,
+    header: str,
+    item_formatter: typ.Callable[[T], str],
+    empty_lines: tuple[str, ...] = (),
 ) -> list[str]:
-    """Return formatted lines for crates skipped through configuration."""
-    if not crates:
-        return []
+    """Return ``header`` and formatted ``items`` when any are present."""
+    if not items:
+        return list(empty_lines)
 
-    lines = ["Skipped via publish.exclude:"]
-    lines.extend(f"- {crate.name}" for crate in crates)
-    return lines
-
-
-def _format_missing_exclusions_section(names: tuple[str, ...]) -> list[str]:
-    """Return formatted lines for misconfigured publish exclusions."""
-    if not names:
-        return []
-
-    lines = ["Configured exclusions not found in workspace:"]
-    lines.extend(f"- {name}" for name in names)
-    return lines
+    formatted_items = [item_formatter(item) for item in items]
+    return [header, *formatted_items]
 
 
 def _format_plan(
@@ -121,11 +104,34 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    lines.extend(_format_publishable_section(plan.publishable))
-    lines.extend(_format_skipped_manifest_section(plan.skipped_manifest))
-    lines.extend(_format_skipped_configuration_section(plan.skipped_configuration))
     lines.extend(
-        _format_missing_exclusions_section(plan.missing_configuration_exclusions)
+        _format_section(
+            plan.publishable,
+            header=f"Crates to publish ({len(plan.publishable)}):",
+            item_formatter=lambda crate: f"- {crate.name} @ {crate.version}",
+            empty_lines=("Crates to publish: none",),
+        )
+    )
+    lines.extend(
+        _format_section(
+            plan.skipped_manifest,
+            header="Skipped (publish = false):",
+            item_formatter=lambda crate: f"- {crate.name}",
+        )
+    )
+    lines.extend(
+        _format_section(
+            plan.skipped_configuration,
+            header="Skipped via publish.exclude:",
+            item_formatter=lambda crate: f"- {crate.name}",
+        )
+    )
+    lines.extend(
+        _format_section(
+            plan.missing_configuration_exclusions,
+            header="Configured exclusions not found in workspace:",
+            item_formatter=lambda name: f"- {name}",
+        )
     )
 
     return "\n".join(lines)
@@ -139,7 +145,10 @@ def run(
     """Plan crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
     if configuration is None:
-        configuration = config_module.current_configuration()
+        try:
+            configuration = config_module.current_configuration()
+        except config_module.ConfigurationNotLoadedError:
+            configuration = config_module.load_configuration(root_path)
     if workspace is None:
         from lading.workspace import load_workspace
 

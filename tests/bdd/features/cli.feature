@@ -61,6 +61,17 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command prints the publish plan for "alpha"
 
+  Scenario: Publish command reports skipped crates and missing exclusions
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with publish filtering cases
+    And publish.exclude contains "gamma"
+    And publish.exclude contains "missing-delta"
+    When I invoke lading publish with that workspace
+    Then the publish command prints the publish plan for "alpha"
+    And the publish command reports manifest-skipped crate "beta"
+    And the publish command reports configuration-skipped crate "gamma"
+    And the publish command reports missing exclusion "missing-delta"
+
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
     When I invoke lading bump 1.2.3 with that workspace

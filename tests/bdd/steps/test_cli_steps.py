@@ -264,6 +264,8 @@ def _build_package_metadata(
     version: str,
     manifest_path: Path,
     dependencies: list[dict[str, str]] | None = None,
+    *,
+    publish: bool | tuple[str, ...] | None = None,
 ) -> dict[str, typ.Any]:
     """Construct the minimal package metadata payload for ``cargo metadata``."""
     return {
@@ -272,7 +274,7 @@ def _build_package_metadata(
         "id": f"{name}-id",
         "manifest_path": str(manifest_path),
         "dependencies": [] if dependencies is None else dependencies,
-        "publish": None,
+        "publish": publish,
     }
 
 
@@ -337,6 +339,67 @@ def given_cargo_metadata_with_internal_dependencies(
     )
 
 
+@given("cargo metadata describes a workspace with publish filtering cases")
+def given_cargo_metadata_with_publish_filters(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata illustrating publishable, skipped, and missing crates."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+    crate_specs: tuple[tuple[str, bool], ...] = (
+        ("alpha", True),
+        ("beta", False),
+        ("gamma", True),
+    )
+    packages: list[dict[str, typ.Any]] = []
+    member_entries: list[str] = []
+    for name, publishable in crate_specs:
+        crate_dir = workspace_directory / "crates" / name
+        crate_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = crate_dir / "Cargo.toml"
+        package_lines = [
+            "[package]",
+            f'name = "{name}"',
+            'version = "0.1.0"',
+        ]
+        if not publishable:
+            package_lines.append("publish = false")
+        manifest_path.write_text("\n".join(package_lines) + "\n", encoding="utf-8")
+        packages.append(
+            _build_package_metadata(
+                name,
+                "0.1.0",
+                manifest_path,
+                publish=False if not publishable else None,
+            )
+        )
+        member_entries.append(f'"crates/{name}"')
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    members_literal = ", ".join(member_entries)
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            f"""
+            [workspace]
+            members = [{members_literal}]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": packages,
+        "workspace_members": [f"{name}-id" for name, _ in crate_specs],
+    }
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+    )
+
+
 @given(parsers.parse('bump.exclude contains "{crate_name}"'))
 def given_bump_exclude_contains(
     workspace_directory: Path,
@@ -353,6 +416,27 @@ def given_bump_exclude_contains(
     if exclude is None:
         exclude = array()
         bump_table["exclude"] = exclude
+    if crate_name not in exclude:
+        exclude.append(crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
+@given(parsers.parse('publish.exclude contains "{crate_name}"'))
+def given_publish_exclude_contains(
+    workspace_directory: Path,
+    crate_name: str,
+) -> None:
+    """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = parse_toml(config_path.read_text(encoding="utf-8"))
+    publish_table = document.get("publish")
+    if publish_table is None:
+        publish_table = table()
+        document["publish"] = publish_table
+    exclude = publish_table.get("exclude")
+    if exclude is None:
+        exclude = array()
+        publish_table["exclude"] = exclude
     if crate_name not in exclude:
         exclude.append(crate_name)
     config_path.write_text(document.as_string(), encoding="utf-8")
@@ -623,7 +707,54 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     lines = [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
     assert lines[0] == f"Publish plan for {workspace}"
     assert "Strip patch strategy: all" in lines[1]
-    assert any(line == f"- {crate_name} @ 0.1.0" for line in lines)
+    assert f"- {crate_name} @ 0.1.0" in lines
+
+
+def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
+    """Return trimmed publish plan output lines for ``cli_run``."""
+    return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
+
+
+@then(
+    parsers.parse('the publish command reports manifest-skipped crate "{crate_name}"')
+)
+def then_publish_reports_manifest_skip(
+    cli_run: dict[str, typ.Any], crate_name: str
+) -> None:
+    """Assert the publish plan lists ``crate_name`` under manifest skips."""
+    lines = _publish_plan_lines(cli_run)
+    assert "Skipped (publish = false):" in lines
+    section_index = lines.index("Skipped (publish = false):")
+    skipped = lines[section_index + 1 :]
+    assert f"- {crate_name}" in skipped
+
+
+@then(
+    parsers.parse(
+        'the publish command reports configuration-skipped crate "{crate_name}"'
+    )
+)
+def then_publish_reports_configuration_skip(
+    cli_run: dict[str, typ.Any], crate_name: str
+) -> None:
+    """Assert the publish plan lists ``crate_name`` under configuration skips."""
+    lines = _publish_plan_lines(cli_run)
+    assert "Skipped via publish.exclude:" in lines
+    section_index = lines.index("Skipped via publish.exclude:")
+    skipped = lines[section_index + 1 :]
+    assert f"- {crate_name}" in skipped
+
+
+@then(parsers.parse('the publish command reports missing exclusion "{name}"'))
+def then_publish_reports_missing_exclusion(
+    cli_run: dict[str, typ.Any], name: str
+) -> None:
+    """Assert the publish plan reports the missing exclusion ``name``."""
+    lines = _publish_plan_lines(cli_run)
+    assert "Configured exclusions not found in workspace:" in lines
+    section_index = lines.index("Configured exclusions not found in workspace:")
+    missing = lines[section_index + 1 :]
+    assert f"- {name}" in missing
 
 
 @then("the CLI reports a missing configuration error")

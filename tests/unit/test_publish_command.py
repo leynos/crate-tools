@@ -65,6 +65,34 @@ def test_plan_publication_filters_manifest_and_configuration(tmp_path: Path) -> 
     assert plan.skipped_configuration == (configuration_skipped,)
 
 
+def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
+    """Planner returns empty results when the workspace has no crates."""
+    root = tmp_path.resolve()
+    workspace = WorkspaceGraph(workspace_root=root, crates=())
+    configuration = _make_config()
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == ()
+    assert plan.skipped_manifest == ()
+    assert plan.skipped_configuration == ()
+
+
+def test_plan_publication_empty_exclude_list(tmp_path: Path) -> None:
+    """Configuration exclusions default to publishing all eligible crates."""
+    root = tmp_path.resolve()
+    publishable = _make_crate(root, "alpha")
+    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
+    workspace = _make_workspace(root, publishable, manifest_skipped)
+    configuration = _make_config(exclude=())
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (publishable,)
+    assert plan.skipped_manifest == (manifest_skipped,)
+    assert plan.skipped_configuration == ()
+
+
 def test_plan_publication_records_missing_exclusions(tmp_path: Path) -> None:
     """Unknown entries in publish.exclude are reported in the plan."""
     root = tmp_path.resolve()
@@ -74,6 +102,50 @@ def test_plan_publication_records_missing_exclusions(tmp_path: Path) -> None:
     plan = publish.plan_publication(workspace, configuration)
 
     assert plan.missing_configuration_exclusions == ("missing",)
+
+
+def test_plan_publication_records_multiple_missing_exclusions(
+    tmp_path: Path,
+) -> None:
+    """Multiple unmatched exclusions are surfaced in configuration order."""
+    root = tmp_path.resolve()
+    workspace = _make_workspace(root)
+    configuration = _make_config(exclude=("missing1", "missing2", "missing3"))
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.missing_configuration_exclusions == (
+        "missing1",
+        "missing2",
+        "missing3",
+    )
+
+
+def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
+    """Publishable and skipped crates appear in deterministic alphabetical order."""
+    root = tmp_path.resolve()
+    publishable_second = _make_crate(root, "beta")
+    publishable_first = _make_crate(root, "alpha")
+    manifest_skipped_late = _make_crate(root, "epsilon", publish_flag=False)
+    manifest_skipped_early = _make_crate(root, "delta", publish_flag=False)
+    config_skipped_late = _make_crate(root, "theta")
+    config_skipped_early = _make_crate(root, "gamma")
+    workspace = _make_workspace(
+        root,
+        publishable_second,
+        publishable_first,
+        manifest_skipped_late,
+        manifest_skipped_early,
+        config_skipped_late,
+        config_skipped_early,
+    )
+    configuration = _make_config(exclude=("gamma", "theta"))
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (publishable_first, publishable_second)
+    assert plan.skipped_manifest == (manifest_skipped_early, manifest_skipped_late)
+    assert plan.skipped_configuration == (config_skipped_early, config_skipped_late)
 
 
 def test_run_normalises_workspace_root(
@@ -109,6 +181,33 @@ def test_run_uses_active_configuration(
     output = publish.run(tmp_path)
 
     assert "skip-me" in output
+
+
+def test_run_loads_configuration_when_inactive(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``run`` loads configuration from disk if no active configuration exists."""
+    root = tmp_path.resolve()
+    workspace = _make_workspace(root, _make_crate(root, "alpha"))
+    monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
+    loaded_configuration = _make_config()
+    load_calls: list[Path] = []
+
+    def raise_not_loaded() -> config_module.LadingConfig:
+        message = "Configuration unavailable"
+        raise config_module.ConfigurationNotLoadedError(message)
+
+    def capture_load(path: Path) -> config_module.LadingConfig:
+        load_calls.append(path)
+        return loaded_configuration
+
+    monkeypatch.setattr(config_module, "current_configuration", raise_not_loaded)
+    monkeypatch.setattr(config_module, "load_configuration", capture_load)
+
+    output = publish.run(root)
+
+    assert "Crates to publish" in output
+    assert load_calls == [root]
 
 
 def test_run_formats_plan_summary(tmp_path: Path) -> None:
