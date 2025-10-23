@@ -234,8 +234,8 @@ def _create_test_crate(
 
 def _build_package_metadata(
     name: str,
-    version: str,
     manifest_path: Path,
+    version: str = "0.1.0",
     dependencies: list[dict[str, str]] | None = None,
     *,
     publish: bool | tuple[str, ...] | None = None,
@@ -299,9 +299,9 @@ def given_cargo_metadata_with_internal_dependencies(
     payload = {
         "workspace_root": str(workspace_directory),
         "packages": [
-            _build_package_metadata("alpha", "0.1.0", alpha_manifest),
+            _build_package_metadata("alpha", alpha_manifest),
             _build_package_metadata(
-                "beta", "0.1.0", beta_manifest, dependencies=beta_dependency_entries
+                "beta", beta_manifest, dependencies=beta_dependency_entries
             ),
         ],
         "workspace_members": ["alpha-id", "beta-id"],
@@ -342,7 +342,6 @@ def given_cargo_metadata_with_publish_filters(
         packages.append(
             _build_package_metadata(
                 name,
-                "0.1.0",
                 manifest_path,
                 publish=False if not publishable else None,
             )
