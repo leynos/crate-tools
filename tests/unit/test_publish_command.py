@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import typing as typ
 from pathlib import Path
+
+import pytest
 
 from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate, WorkspaceGraph
-
-if typ.TYPE_CHECKING:
-    import pytest
+from lading.workspace import WorkspaceCrate, WorkspaceGraph, WorkspaceModelError
 
 
 def _make_config(**overrides: object) -> config_module.LadingConfig:
@@ -231,3 +229,45 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     assert "- gamma" in lines
     assert "Configured exclusions not found in workspace:" in lines
     assert "- missing" in lines
+
+
+def test_run_surfaces_missing_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``run`` converts missing workspace roots into workspace model errors."""
+    configuration = _make_config()
+
+    def raise_missing(_: Path) -> WorkspaceGraph:
+        message = "workspace missing"
+        raise FileNotFoundError(message)
+
+    monkeypatch.setattr("lading.workspace.load_workspace", raise_missing)
+
+    with pytest.raises(WorkspaceModelError) as excinfo:
+        publish.run(tmp_path, configuration)
+
+    message = str(excinfo.value)
+    assert "Workspace root not found" in message
+    assert str(tmp_path.resolve()) in message
+
+
+def test_run_surfaces_configuration_errors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``run`` propagates configuration errors encountered while loading."""
+
+    def raise_not_loaded() -> config_module.LadingConfig:
+        message = "Configuration inactive"
+        raise config_module.ConfigurationNotLoadedError(message)
+
+    def raise_config_error(_: Path) -> config_module.LadingConfig:
+        message = "invalid configuration"
+        raise config_module.ConfigurationError(message)
+
+    monkeypatch.setattr(config_module, "current_configuration", raise_not_loaded)
+    monkeypatch.setattr(config_module, "load_configuration", raise_config_error)
+
+    with pytest.raises(config_module.ConfigurationError) as excinfo:
+        publish.run(tmp_path)
+
+    assert str(excinfo.value) == "invalid configuration"

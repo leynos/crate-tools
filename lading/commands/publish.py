@@ -156,9 +156,13 @@ def run(
         except config_module.ConfigurationNotLoadedError:
             configuration = config_module.load_configuration(root_path)
     if workspace is None:
-        from lading.workspace import load_workspace
+        from lading.workspace import WorkspaceModelError, load_workspace
 
-        workspace = load_workspace(root_path)
+        try:
+            workspace = load_workspace(root_path)
+        except FileNotFoundError as exc:
+            message = f"Workspace root not found: {root_path}"
+            raise WorkspaceModelError(message) from exc
 
     plan = plan_publication(workspace, configuration, workspace_root=root_path)
     return _format_plan(plan, strip_patches=configuration.publish.strip_patches)
