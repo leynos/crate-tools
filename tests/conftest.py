@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-pytest_plugins = ("cmd_mox.pytest_plugin",)
+pytest_plugins = (
+    "cmd_mox.pytest_plugin",
+    "tests.bdd.steps.fixtures",
+    "tests.bdd.steps.test_bump_steps",
+    "tests.bdd.steps.test_publish_steps",
+)
 
 
 @pytest.fixture
