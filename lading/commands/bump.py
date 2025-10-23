@@ -56,7 +56,7 @@ class BumpOptions:
     )
 
 
-@dc.dataclass(frozen=True)
+@dc.dataclass(frozen=True, slots=True)
 class BumpChanges:
     """Collection of files altered by a bump run."""
 
@@ -441,11 +441,11 @@ def _resolve_documentation_targets(
     if not patterns:
         return ()
 
-    resolved: dict[Path, None] = {}
+    resolved: set[Path] = set()
     for pattern in patterns:
         for candidate in workspace_root.glob(pattern):
             if candidate.is_file():
-                resolved.setdefault(candidate, None)
+                resolved.add(candidate)
     return tuple(resolved)
 
 
