@@ -45,11 +45,7 @@ class DocumentationConfig:
         """Create a :class:`DocumentationConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        unknown = set(mapping) - {"globs"}
-        if unknown:
-            joined = ", ".join(sorted(unknown))
-            message = f"Unknown bump.documentation option(s): {joined}."
-            raise ConfigurationError(message)
+        _validate_mapping_keys(mapping, {"globs"}, "bump.documentation")
         return cls(
             globs=_string_tuple(mapping.get("globs"), "bump.documentation.globs"),
         )
@@ -67,11 +63,7 @@ class BumpConfig:
         """Create a :class:`BumpConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        unknown = set(mapping) - {"exclude", "documentation"}
-        if unknown:
-            joined = ", ".join(sorted(unknown))
-            message = f"Unknown bump option(s): {joined}."
-            raise ConfigurationError(message)
+        _validate_mapping_keys(mapping, {"exclude", "documentation"}, "bump")
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "bump.exclude"),
             documentation=DocumentationConfig.from_mapping(
@@ -93,11 +85,11 @@ class PublishConfig:
         """Create a :class:`PublishConfig` from a TOML table mapping."""
         if mapping is None:
             return cls()
-        unknown = set(mapping) - {"exclude", "order", "strip_patches"}
-        if unknown:
-            joined = ", ".join(sorted(unknown))
-            message = f"Unknown publish option(s): {joined}."
-            raise ConfigurationError(message)
+        _validate_mapping_keys(
+            mapping,
+            {"exclude", "order", "strip_patches"},
+            "publish",
+        )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
@@ -115,11 +107,7 @@ class LadingConfig:
     @classmethod
     def from_mapping(cls, mapping: cabc.Mapping[str, typ.Any]) -> LadingConfig:
         """Create a :class:`LadingConfig` from a parsed configuration mapping."""
-        unknown = set(mapping) - {"bump", "publish"}
-        if unknown:
-            joined = ", ".join(sorted(unknown))
-            message = f"Unknown configuration section(s): {joined}."
-            raise ConfigurationError(message)
+        _validate_mapping_keys(mapping, {"bump", "publish"}, "configuration section")
         return cls(
             bump=BumpConfig.from_mapping(
                 _optional_mapping(mapping.get("bump"), "bump")
@@ -133,6 +121,33 @@ class LadingConfig:
 _active_config: contextvars.ContextVar[LadingConfig] = contextvars.ContextVar(
     "lading_active_config"
 )
+
+
+def _validate_mapping_keys(
+    mapping: cabc.Mapping[str, typ.Any] | None,
+    allowed_keys: set[str],
+    context: str,
+) -> None:
+    """Validate that mapping contains only allowed keys.
+
+    Args:
+        mapping: The mapping to validate (may be None).
+        allowed_keys: Set of permitted key names.
+        context: Context for error message (e.g., "bump", "publish").
+
+    Raises:
+        ConfigurationError: If mapping contains unknown keys.
+    """
+    if mapping is None:
+        return
+    unknown = set(mapping) - allowed_keys
+    if unknown:
+        joined = ", ".join(sorted(unknown))
+        if context.endswith(" section"):
+            message = f"Unknown {context}(s): {joined}."
+        else:
+            message = f"Unknown {context} option(s): {joined}."
+        raise ConfigurationError(message)
 
 
 def build_loader(workspace_root: Path) -> Toml:
