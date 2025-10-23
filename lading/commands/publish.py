@@ -1,4 +1,4 @@
-"""Publication planning helpers for :mod:`lading.publish`."""
+"""Publication planning helpers for :mod:`lading.commands.publish`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import dataclasses as dc
 import typing as typ
 
 from lading import config as config_module
-from lading.utils import normalise_workspace_root
+from lading.utils.path import normalise_workspace_root
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -143,6 +143,35 @@ def _format_plan(
     return "\n".join(lines)
 
 
+def _ensure_configuration(
+    configuration: LadingConfig | None, workspace_root: Path
+) -> LadingConfig:
+    """Return active configuration, loading it if necessary."""
+    if configuration is not None:
+        return configuration
+
+    try:
+        return config_module.current_configuration()
+    except config_module.ConfigurationNotLoadedError:
+        return config_module.load_configuration(workspace_root)
+
+
+def _ensure_workspace(
+    workspace: WorkspaceGraph | None, workspace_root: Path
+) -> WorkspaceGraph:
+    """Return workspace graph, loading it if necessary."""
+    if workspace is not None:
+        return workspace
+
+    from lading.workspace import WorkspaceModelError, load_workspace
+
+    try:
+        return load_workspace(workspace_root)
+    except FileNotFoundError as exc:
+        message = f"Workspace root not found: {workspace_root}"
+        raise WorkspaceModelError(message) from exc
+
+
 def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
@@ -150,19 +179,10 @@ def run(
 ) -> str:
     """Plan crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
-    if configuration is None:
-        try:
-            configuration = config_module.current_configuration()
-        except config_module.ConfigurationNotLoadedError:
-            configuration = config_module.load_configuration(root_path)
-    if workspace is None:
-        from lading.workspace import WorkspaceModelError, load_workspace
+    active_configuration = _ensure_configuration(configuration, root_path)
+    active_workspace = _ensure_workspace(workspace, root_path)
 
-        try:
-            workspace = load_workspace(root_path)
-        except FileNotFoundError as exc:
-            message = f"Workspace root not found: {root_path}"
-            raise WorkspaceModelError(message) from exc
-
-    plan = plan_publication(workspace, configuration, workspace_root=root_path)
-    return _format_plan(plan, strip_patches=configuration.publish.strip_patches)
+    plan = plan_publication(
+        active_workspace, active_configuration, workspace_root=root_path
+    )
+    return _format_plan(plan, strip_patches=active_configuration.publish.strip_patches)
