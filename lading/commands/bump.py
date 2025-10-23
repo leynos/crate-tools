@@ -56,6 +56,14 @@ class BumpOptions:
     )
 
 
+@dc.dataclass(frozen=True)
+class BumpChanges:
+    """Collection of files altered by a bump run."""
+
+    manifests: typ.Sequence[Path] = ()
+    documents: typ.Sequence[Path] = ()
+
+
 def run(
     workspace_root: Path | str,
     target_version: str,
@@ -127,8 +135,7 @@ def run(
     ordered_documents = tuple(sorted(changed_documents, key=str))
 
     return _format_result_message(
-        ordered_manifests,
-        ordered_documents,
+        BumpChanges(manifests=ordered_manifests, documents=ordered_documents),
         target_version,
         dry_run=base_options.dry_run,
         workspace_root=root_path,
@@ -167,15 +174,14 @@ def _update_crate_manifest(
 
 
 def _format_result_message(
-    changed_manifests: typ.Sequence[Path],
-    changed_documents: typ.Sequence[Path],
+    changes: BumpChanges,
     target_version: str,
     *,
     dry_run: bool,
     workspace_root: Path,
 ) -> str:
     """Summarise the bump outcome for CLI presentation."""
-    if not changed_manifests and not changed_documents:
+    if not changes.manifests and not changes.documents:
         if dry_run:
             return (
                 "Dry run; no manifest changes required; "
@@ -184,10 +190,10 @@ def _format_result_message(
         return f"No manifest changes required; all versions already {target_version}."
 
     parts: list[str] = []
-    if changed_manifests:
-        parts.append(f"{len(changed_manifests)} manifest(s)")
-    if changed_documents:
-        parts.append(f"{len(changed_documents)} documentation file(s)")
+    if changes.manifests:
+        parts.append(f"{len(changes.manifests)} manifest(s)")
+    if changes.documents:
+        parts.append(f"{len(changes.documents)} documentation file(s)")
     description = parts[0] if len(parts) == 1 else " and ".join(parts)
     if dry_run:
         header = f"Dry run; would update version to {target_version} in {description}:"
@@ -195,11 +201,11 @@ def _format_result_message(
         header = f"Updated version to {target_version} in {description}:"
     formatted_paths = [
         f"- {_format_manifest_path(manifest_path, workspace_root)}"
-        for manifest_path in changed_manifests
+        for manifest_path in changes.manifests
     ]
     formatted_paths.extend(
         f"- {_format_manifest_path(document_path, workspace_root)} (documentation)"
-        for document_path in changed_documents
+        for document_path in changes.documents
     )
     return "\n".join([header, *formatted_paths])
 

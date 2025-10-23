@@ -249,8 +249,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
     documentation_paths = [workspace_root / "README.md"]
     assert (
         bump._format_result_message(
-            [],
-            [],
+            bump.BumpChanges(),
             "1.2.3",
             dry_run=False,
             workspace_root=workspace_root,
@@ -258,8 +257,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         == "No manifest changes required; all versions already 1.2.3."
     )
     assert bump._format_result_message(
-        manifest_paths,
-        [],
+        bump.BumpChanges(manifests=manifest_paths),
         "4.5.6",
         dry_run=False,
         workspace_root=workspace_root,
@@ -269,8 +267,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- member/Cargo.toml",
     ]
     assert bump._format_result_message(
-        manifest_paths,
-        [],
+        bump.BumpChanges(manifests=manifest_paths),
         "4.5.6",
         dry_run=True,
         workspace_root=workspace_root,
@@ -280,8 +277,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- member/Cargo.toml",
     ]
     assert bump._format_result_message(
-        manifest_paths,
-        documentation_paths,
+        bump.BumpChanges(manifests=manifest_paths, documents=documentation_paths),
         "7.8.9",
         dry_run=False,
         workspace_root=workspace_root,
