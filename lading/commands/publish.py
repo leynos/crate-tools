@@ -86,12 +86,14 @@ def _format_section(
     header: str,
     item_formatter: typ.Callable[[T], str],
     empty_lines: tuple[str, ...] = (),
+    sort_key: typ.Callable[[T], typ.Any] | None = None,
 ) -> list[str]:
     """Return ``header`` and formatted ``items`` when any are present."""
     if not items:
         return list(empty_lines)
 
-    formatted_items = [item_formatter(item) for item in items]
+    ordered_items = sorted(items, key=sort_key) if sort_key else items
+    formatted_items = [item_formatter(item) for item in ordered_items]
     return [header, *formatted_items]
 
 
@@ -110,6 +112,7 @@ def _format_plan(
             header=f"Crates to publish ({len(plan.publishable)}):",
             item_formatter=lambda crate: f"- {crate.name} @ {crate.version}",
             empty_lines=("Crates to publish: none",),
+            sort_key=lambda crate: crate.name,
         )
     )
     lines.extend(
@@ -117,6 +120,7 @@ def _format_plan(
             plan.skipped_manifest,
             header="Skipped (publish = false):",
             item_formatter=lambda crate: f"- {crate.name}",
+            sort_key=lambda crate: crate.name,
         )
     )
     lines.extend(
@@ -124,6 +128,7 @@ def _format_plan(
             plan.skipped_configuration,
             header="Skipped via publish.exclude:",
             item_formatter=lambda crate: f"- {crate.name}",
+            sort_key=lambda crate: crate.name,
         )
     )
     lines.extend(
@@ -131,6 +136,7 @@ def _format_plan(
             plan.missing_configuration_exclusions,
             header="Configured exclusions not found in workspace:",
             item_formatter=lambda name: f"- {name}",
+            sort_key=lambda name: name,
         )
     )
 
