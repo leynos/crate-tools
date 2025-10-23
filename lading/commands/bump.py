@@ -555,6 +555,25 @@ def _extract_fence_indent(line: str, fence_marker: str) -> str:
     return "" if position < 0 else line[:position]
 
 
+def _update_toml_snippet_dependencies(
+    document: TOMLDocument,
+    dependency_targets: typ.Collection[str],
+    target_version: str,
+) -> bool:
+    """Update dependency sections in a TOML snippet document."""
+    if not dependency_targets:
+        return False
+
+    changed = False
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        table = _select_table(document, (section,))
+        if table is None:
+            continue
+        if _update_dependency_table(table, dependency_targets, target_version):
+            changed = True
+    return changed
+
+
 def _update_toml_snippet_versions(
     snippet: str,
     dependency_targets: typ.Collection[str],
@@ -574,13 +593,8 @@ def _update_toml_snippet_versions(
     ):
         changed = True
 
-    if dependency_targets:
-        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
-            table = _select_table(document, (section,))
-            if table is None:
-                continue
-            if _update_dependency_table(table, dependency_targets, target_version):
-                changed = True
+    if _update_toml_snippet_dependencies(document, dependency_targets, target_version):
+        changed = True
 
     if not changed:
         return snippet, False
