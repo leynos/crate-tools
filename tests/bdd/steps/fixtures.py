@@ -372,25 +372,34 @@ def given_cargo_metadata_with_publish_filters(
     )
 
 
+def _add_exclude_to_config(
+    workspace_directory: Path,
+    table_name: str,
+    crate_name: str,
+) -> None:
+    """Ensure ``crate_name`` appears in the ``{table_name}.exclude`` configuration."""
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    document = parse_toml(config_path.read_text(encoding="utf-8"))
+    table_section = document.get(table_name)
+    if table_section is None:
+        table_section = table()
+        document[table_name] = table_section
+    exclude = table_section.get("exclude")
+    if exclude is None:
+        exclude = array()
+        table_section["exclude"] = exclude
+    if crate_name not in exclude:
+        exclude.append(crate_name)
+    config_path.write_text(document.as_string(), encoding="utf-8")
+
+
 @given(parsers.parse('bump.exclude contains "{crate_name}"'))
 def given_bump_exclude_contains(
     workspace_directory: Path,
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``bump.exclude`` configuration."""
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = parse_toml(config_path.read_text(encoding="utf-8"))
-    bump_table = document.get("bump")
-    if bump_table is None:
-        bump_table = table()
-        document["bump"] = bump_table
-    exclude = bump_table.get("exclude")
-    if exclude is None:
-        exclude = array()
-        bump_table["exclude"] = exclude
-    if crate_name not in exclude:
-        exclude.append(crate_name)
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    _add_exclude_to_config(workspace_directory, "bump", crate_name)
 
 
 @given(parsers.parse('publish.exclude contains "{crate_name}"'))
@@ -399,16 +408,4 @@ def given_publish_exclude_contains(
     crate_name: str,
 ) -> None:
     """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
-    config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = parse_toml(config_path.read_text(encoding="utf-8"))
-    publish_table = document.get("publish")
-    if publish_table is None:
-        publish_table = table()
-        document["publish"] = publish_table
-    exclude = publish_table.get("exclude")
-    if exclude is None:
-        exclude = array()
-        publish_table["exclude"] = exclude
-    if crate_name not in exclude:
-        exclude.append(crate_name)
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    _add_exclude_to_config(workspace_directory, "publish", crate_name)
