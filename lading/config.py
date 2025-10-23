@@ -137,6 +137,7 @@ def _validate_mapping_keys(
 
     Raises:
         ConfigurationError: If mapping contains unknown keys.
+
     """
     if mapping is None:
         return
