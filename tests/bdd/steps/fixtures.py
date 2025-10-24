@@ -70,13 +70,20 @@ def given_workspace_versions_match(
     workspace_document["workspace"]["package"]["version"] = version
     workspace_manifest.write_text(workspace_document.as_string(), encoding="utf-8")
 
-    crate_manifest = workspace_directory / "crates" / "alpha" / "Cargo.toml"
-    if not crate_manifest.exists():
-        message = f"Crate manifest not found: {crate_manifest}"
+    crates_root = workspace_directory / "crates"
+    if not crates_root.exists():
+        message = f"Crates directory not found: {crates_root}"
         raise AssertionError(message)
-    crate_document = parse_toml(crate_manifest.read_text(encoding="utf-8"))
-    crate_document["package"]["version"] = version
-    crate_manifest.write_text(crate_document.as_string(), encoding="utf-8")
+    for child in crates_root.iterdir():
+        if not child.is_dir():
+            continue
+        manifest_path = child / "Cargo.toml"
+        if not manifest_path.exists():
+            message = f"Crate manifest not found: {manifest_path}"
+            raise AssertionError(message)
+        crate_document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+        crate_document["package"]["version"] = version
+        manifest_path.write_text(crate_document.as_string(), encoding="utf-8")
 
 
 @given(
