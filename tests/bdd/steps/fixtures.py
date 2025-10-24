@@ -57,21 +57,30 @@ def given_documentation_glob(workspace_directory: Path, pattern: str) -> None:
     config_path.write_text(document.as_string(), encoding="utf-8")
 
 
-@given(parsers.parse('the workspace manifests record version "{version}"'))
-def given_workspace_versions_match(
-    workspace_directory: Path,
+def _update_manifest_version(
+    manifest_path: Path,
     version: str,
+    keys: tuple[str, ...],
 ) -> None:
-    """Ensure the workspace and member manifests record ``version``."""
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    if not workspace_manifest.exists():
-        message = f"Workspace manifest not found: {workspace_manifest}"
+    """Update version at nested ``keys`` path in the manifest at ``manifest_path``."""
+    if not manifest_path.exists():
+        message = f"Manifest not found: {manifest_path}"
         raise AssertionError(message)
-    workspace_document = parse_toml(workspace_manifest.read_text(encoding="utf-8"))
-    workspace_document["workspace"]["package"]["version"] = version
-    workspace_manifest.write_text(workspace_document.as_string(), encoding="utf-8")
+    document = parse_toml(manifest_path.read_text(encoding="utf-8"))
+    target = document
+    for key in keys[:-1]:
+        try:
+            target = target[key]
+        except KeyError as exc:  # pragma: no cover - defensive guard
+            path = "/".join(keys)
+            message = f"Key path {path!r} missing from manifest {manifest_path}"
+            raise AssertionError(message) from exc
+    target[keys[-1]] = version
+    manifest_path.write_text(document.as_string(), encoding="utf-8")
 
-    crates_root = workspace_directory / "crates"
+
+def _update_crate_manifests(crates_root: Path, version: str) -> None:
+    """Update version in all crate manifests under ``crates_root``."""
     if not crates_root.exists():
         message = f"Crates directory not found: {crates_root}"
         raise AssertionError(message)
@@ -79,12 +88,27 @@ def given_workspace_versions_match(
         if not child.is_dir():
             continue
         manifest_path = child / "Cargo.toml"
-        if not manifest_path.exists():
-            message = f"Crate manifest not found: {manifest_path}"
-            raise AssertionError(message)
-        crate_document = parse_toml(manifest_path.read_text(encoding="utf-8"))
-        crate_document["package"]["version"] = version
-        manifest_path.write_text(crate_document.as_string(), encoding="utf-8")
+        _update_manifest_version(
+            manifest_path,
+            version,
+            ("package", "version"),
+        )
+
+
+@given(parsers.parse('the workspace manifests record version "{version}"'))
+def given_workspace_versions_match(
+    workspace_directory: Path,
+    version: str,
+) -> None:
+    """Ensure the workspace and member manifests record ``version``."""
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    _update_manifest_version(
+        workspace_manifest,
+        version,
+        ("workspace", "package", "version"),
+    )
+    crates_root = workspace_directory / "crates"
+    _update_crate_manifests(crates_root, version)
 
 
 @given(
