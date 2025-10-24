@@ -267,11 +267,11 @@ def _build_package_metadata(
     name: str,
     manifest_path: Path,
     version: str = "0.1.0",
-    *,
-    dependencies: list[dict[str, str]] | None = None,
-    publish: bool | tuple[str, ...] | None = None,
+    **metadata: typ.Any,  # noqa: ANN401 - fixtures accept arbitrary metadata fields
 ) -> dict[str, typ.Any]:
     """Construct the minimal package metadata payload for ``cargo metadata``."""
+    dependencies = metadata.get("dependencies")
+    publish = metadata.get("publish")
     return {
         "name": name,
         "version": version,
