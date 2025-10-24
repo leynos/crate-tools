@@ -348,6 +348,9 @@ lading publish [--live] [--allow-dirty]
     - Filter the crate list to include only those where `publish` is not
       `false`.
     - Remove any crates listed in `publish.exclude` from `lading.toml`.
+    - Record crates skipped by manifest settings and configuration so the CLI
+      can explain how the plan was derived. Report any configuration exclusions
+      that do not match workspace crates to help users prune stale entries.
 
 3. **Determine Publish Order:**
 

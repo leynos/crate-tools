@@ -73,8 +73,7 @@ markdownlint: $(MDLINT) ## Lint Markdown files
 	  -not -path './.venv/*' -print0 | xargs -0 $(MDLINT)
 
 nixie: $(NIXIE) ## Validate Mermaid diagrams
-	find . -type f -name '*.md' \
-	  -not -path './.venv/*' -print0 | xargs -0 $(NIXIE)
+	nixie --no-sandbox
 
 test: build uv pytest ## Run tests
 	uv run pytest -v

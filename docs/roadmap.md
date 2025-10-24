@@ -154,7 +154,7 @@ occur.
 
 **Tasks:**
 
-- [ ] **Determine Publishable Crates:**
+- [x] **Determine Publishable Crates:**
 
   - **Outcome:** The `publish` command can identify all publishable crates from
     the workspace model.

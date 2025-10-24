@@ -123,14 +123,30 @@ Dry run; would update version to 1.2.3 in 3 manifest(s):
 
 ### `publish`
 
-`publish` is scaffolded in the same fashion. It acknowledges the workspace,
-reports the configured `strip_patches` strategy, includes the discovered crate
-count, and returns successfully. Publication planning and execution will arrive
-in later phases of the roadmap.
+`publish` now produces a publication plan for the workspace. The command reads
+`publish.exclude` from `lading.toml`, honours any crate manifests that declare
+`publish = false`, and prints a structured summary listing the crates that will
+be published. Additional sections document crates skipped by manifest flags or
+configuration, along with any exclusion entries that do not match a workspace
+crate. This early feedback allows release engineers to validate the plan before
+later roadmap steps begin executing pre-flight checks and cargo commands.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish
 ```
+
+Example output:
+
+```text
+Publish plan for /workspace/path
+Strip patch strategy: all
+Crates to publish (1):
+- alpha @ 0.1.0
+```
+
+When the configuration excludes additional crates, or a manifest sets
+`publish = false`, the plan prints dedicated sections so the operator can see
+why those crates were skipped.
 
 ## Testing hooks
 
