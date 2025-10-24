@@ -142,6 +142,27 @@ def given_cargo_metadata_sample(
 
 
 @given(
+    parsers.parse(
+        'the workspace README contains a TOML dependency snippet for "{crate_name}"'
+    )
+)
+def given_workspace_readme_snippet(workspace_directory: Path, crate_name: str) -> None:
+    """Write a README with a TOML fence referencing ``crate_name``."""
+    readme_path = workspace_directory / "README.md"
+    content = textwrap.dedent(
+        f"""
+        # Usage
+
+        ```toml
+        [dependencies]
+        {crate_name} = "0.1.0"
+        ```
+        """
+    ).lstrip()
+    readme_path.write_text(content, encoding="utf-8")
+
+
+@given(
     "cargo metadata describes a workspace with crates alpha and beta",
 )
 def given_cargo_metadata_two_crates(
@@ -236,11 +257,11 @@ def _build_package_metadata(
     name: str,
     manifest_path: Path,
     version: str = "0.1.0",
-    **metadata: typ.Any,
+    *,
+    dependencies: list[dict[str, str]] | None = None,
+    publish: bool | tuple[str, ...] | None = None,
 ) -> dict[str, typ.Any]:
     """Construct the minimal package metadata payload for ``cargo metadata``."""
-    dependencies = metadata.get("dependencies")
-    publish = metadata.get("publish")
     return {
         "name": name,
         "version": version,
