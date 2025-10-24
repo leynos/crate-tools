@@ -81,6 +81,9 @@ select = [
     "D",
     "ANN",
 ]
+extend-ignore = [
+    "D203",  # Conflicts with D211; prefer enforcing no blank line before class docstring.
+]
 per-file-ignores = {"**/test_*.py" = ["S101"]}
 
 [tool.ruff.lint.flake8-import-conventions]
@@ -133,4 +136,3 @@ include = [
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
-
