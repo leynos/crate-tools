@@ -83,6 +83,7 @@ select = [
 ]
 extend-ignore = [
     "D203",  # Conflicts with D211; prefer enforcing no blank line before class docstring.
+    "D213",  # Conflicts with D212; keep summary on the first line.
 ]
 per-file-ignores = {"**/test_*.py" = ["S101"]}
 
