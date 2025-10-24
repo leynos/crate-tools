@@ -380,6 +380,7 @@ def given_cargo_metadata_with_publish_filters(
         ("alpha", True),
         ("beta", False),
         ("gamma", True),
+        ("delta", True),
     )
     packages: list[dict[str, typ.Any]] = []
     member_entries: list[str] = []
@@ -399,12 +400,72 @@ def given_cargo_metadata_with_publish_filters(
             _build_package_metadata(
                 name,
                 manifest_path,
-                publish=False if not publishable else None,
+                publish=None if publishable else False,
             )
         )
         member_entries.append(f'"crates/{name}"')
     workspace_manifest = workspace_directory / "Cargo.toml"
     members_literal = ", ".join(member_entries)
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            f"""
+            [workspace]
+            members = [{members_literal}]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": packages,
+        "workspace_members": [f"{name}-id" for name, _ in crate_specs],
+    }
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+        stderr="",
+    )
+
+
+@given("cargo metadata describes a workspace with no publishable crates")
+def given_cargo_metadata_without_publishable_crates(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata where every crate is skipped by manifest or configuration."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+    crate_specs: tuple[tuple[str, bool], ...] = (
+        ("alpha", False),
+        ("beta", True),
+    )
+    packages: list[dict[str, typ.Any]] = []
+    members: list[str] = []
+    for name, publishable in crate_specs:
+        crate_dir = workspace_directory / "crates" / name
+        crate_dir.mkdir(parents=True, exist_ok=True)
+        manifest_path = crate_dir / "Cargo.toml"
+        manifest_lines = [
+            "[package]",
+            f'name = "{name}"',
+            'version = "0.1.0"',
+        ]
+        if not publishable:
+            manifest_lines.append("publish = false")
+        manifest_path.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+        packages.append(
+            _build_package_metadata(
+                name,
+                manifest_path,
+                publish=None if publishable else False,
+            )
+        )
+        members.append(f'"crates/{name}"')
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    members_literal = ", ".join(members)
     workspace_manifest.write_text(
         textwrap.dedent(
             f"""

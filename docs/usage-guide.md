@@ -145,8 +145,8 @@ Crates to publish (1):
 ```
 
 When the configuration excludes additional crates, or a manifest sets
-`publish = false`, the plan prints dedicated sections so the operator can see
-why those crates were skipped.
+`publish = false`, the plan prints dedicated sections so the reasons for
+skipping crates are visible to the operator.
 
 ## Testing hooks
 

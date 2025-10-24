@@ -77,6 +77,16 @@ def then_command_reports_dry_run(
     assert f"would update version to {version}" in stdout
 
 
+@then(parsers.parse('the bump command reports an invalid version error for "{version}"'))
+def then_bump_reports_invalid_version(
+    cli_run: dict[str, typ.Any], version: str
+) -> None:
+    """Assert that invalid versions cause the command to fail with details."""
+    assert cli_run["returncode"] == 1
+    stderr = cli_run["stderr"]
+    assert f"Invalid version argument '{version}'" in stderr
+
+
 @then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
 def then_cli_output_lists_manifest_paths(
     cli_run: dict[str, typ.Any],
