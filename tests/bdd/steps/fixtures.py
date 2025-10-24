@@ -8,6 +8,7 @@ import typing as typ
 
 from pytest_bdd import given, parsers
 from tomlkit import array, table
+from tomlkit import document as make_document
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
@@ -145,6 +146,7 @@ def given_cargo_metadata_sample(
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(payload),
+        stderr="",
     )
 
 
@@ -230,6 +232,7 @@ def given_cargo_metadata_two_crates(
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(payload),
+        stderr="",
     )
 
 
@@ -337,6 +340,7 @@ def given_cargo_metadata_with_internal_dependencies(
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(payload),
+        stderr="",
     )
 
 
@@ -397,6 +401,7 @@ def given_cargo_metadata_with_publish_filters(
     cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
         exit_code=0,
         stdout=json.dumps(payload),
+        stderr="",
     )
 
 
@@ -407,18 +412,21 @@ def _add_exclude_to_config(
 ) -> None:
     """Ensure ``crate_name`` appears in the ``{table_name}.exclude`` configuration."""
     config_path = workspace_directory / config_module.CONFIG_FILENAME
-    document = parse_toml(config_path.read_text(encoding="utf-8"))
-    table_section = document.get(table_name)
+    if config_path.exists():
+        doc = parse_toml(config_path.read_text(encoding="utf-8"))
+    else:
+        doc = make_document()
+    table_section = doc.get(table_name)
     if table_section is None:
         table_section = table()
-        document[table_name] = table_section
+        doc[table_name] = table_section
     exclude = table_section.get("exclude")
     if exclude is None:
         exclude = array()
         table_section["exclude"] = exclude
     if crate_name not in exclude:
         exclude.append(crate_name)
-    config_path.write_text(document.as_string(), encoding="utf-8")
+    config_path.write_text(doc.as_string(), encoding="utf-8")
 
 
 @given(parsers.parse('bump.exclude contains "{crate_name}"'))
