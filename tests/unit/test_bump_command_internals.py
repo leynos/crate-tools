@@ -176,6 +176,42 @@ def test_should_skip_crate_update_requires_selectors_or_dependencies() -> None:
     )
 
 
+def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
+    """Descriptions enumerate manifest and documentation counts."""
+    changes = bump.BumpChanges(
+        manifests=(tmp_path / "Cargo.toml", tmp_path / "member" / "Cargo.toml"),
+        documents=(tmp_path / "README.md",),
+    )
+    assert (
+        bump._build_changes_description(changes)
+        == "2 manifest(s) and 1 documentation file(s)"
+    )
+
+
+def test_format_no_changes_message_mentions_dry_run() -> None:
+    """No-change messaging adapts to dry-run context."""
+    assert (
+        bump._format_no_changes_message("1.2.3", dry_run=False)
+        == "No manifest changes required; all versions already 1.2.3."
+    )
+    assert (
+        bump._format_no_changes_message("1.2.3", dry_run=True)
+        == "Dry run; no manifest changes required; all versions already 1.2.3."
+    )
+
+
+def test_format_header_labels_dry_run_requests() -> None:
+    """Headers record whether the bump would be applied or was applied."""
+    assert (
+        bump._format_header("1 manifest(s)", "2.0.0", dry_run=False)
+        == "Updated version to 2.0.0 in 1 manifest(s):"
+    )
+    assert (
+        bump._format_header("1 manifest(s)", "2.0.0", dry_run=True)
+        == "Dry run; would update version to 2.0.0 in 1 manifest(s):"
+    )
+
+
 def test_format_manifest_path_relative(tmp_path: Path) -> None:
     """Paths inside the workspace root are displayed relative to it."""
     workspace_root = tmp_path
@@ -222,11 +258,8 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         tmp_path,
         dependency=params.dependency_spec,
     )
-    config_kwargs: dict[str, typ.Any] = {}
-    if params.exclude_crates:
-        config_kwargs["exclude"] = params.exclude_crates
     options = bump.BumpOptions(
-        configuration=_make_config(**config_kwargs),
+        configuration=_make_config(exclude=params.exclude_crates),
         workspace=workspace,
     )
 
@@ -249,14 +282,18 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         workspace_root / "Cargo.toml",
         workspace_root / "member" / "Cargo.toml",
     ]
+    documentation_paths = [workspace_root / "README.md"]
     assert (
         bump._format_result_message(
-            [], "1.2.3", dry_run=False, workspace_root=workspace_root
+            bump.BumpChanges(),
+            "1.2.3",
+            dry_run=False,
+            workspace_root=workspace_root,
         )
         == "No manifest changes required; all versions already 1.2.3."
     )
     assert bump._format_result_message(
-        manifest_paths,
+        bump.BumpChanges(manifests=manifest_paths),
         "4.5.6",
         dry_run=False,
         workspace_root=workspace_root,
@@ -266,7 +303,7 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "- member/Cargo.toml",
     ]
     assert bump._format_result_message(
-        manifest_paths,
+        bump.BumpChanges(manifests=manifest_paths),
         "4.5.6",
         dry_run=True,
         workspace_root=workspace_root,
@@ -274,6 +311,17 @@ def test_format_result_message_handles_changes(tmp_path: Path) -> None:
         "Dry run; would update version to 4.5.6 in 2 manifest(s):",
         "- Cargo.toml",
         "- member/Cargo.toml",
+    ]
+    assert bump._format_result_message(
+        bump.BumpChanges(manifests=manifest_paths, documents=documentation_paths),
+        "7.8.9",
+        dry_run=False,
+        workspace_root=workspace_root,
+    ).splitlines() == [
+        "Updated version to 7.8.9 in 2 manifest(s) and 1 documentation file(s):",
+        "- Cargo.toml",
+        "- member/Cargo.toml",
+        "- README.md (documentation)",
     ]
 
 
