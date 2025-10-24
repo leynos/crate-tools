@@ -60,7 +60,7 @@ def plan_publication(
         publishable.append(crate)
 
     missing_exclusions = tuple(
-        name for name in configured_exclusions if name not in crate_names
+        sorted(name for name in configured_exclusions if name not in crate_names)
     )
 
     ordered_publishable = tuple(sorted(publishable, key=lambda crate: crate.name))
