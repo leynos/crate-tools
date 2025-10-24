@@ -39,7 +39,23 @@ def plan_publication(
     *,
     workspace_root: Path | None = None,
 ) -> PublishPlan:
-    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``."""
+    """Return the :class:`PublishPlan` for ``workspace`` and ``configuration``.
+
+    Parameters
+    ----------
+    workspace : WorkspaceGraph
+        Workspace graph describing the crates that may be published.
+    configuration : LadingConfig
+        Publish configuration specifying which crates should be skipped.
+    workspace_root : Path | None, optional
+        Override for the workspace root path. When ``None`` (the default),
+        ``workspace.workspace_root`` is used instead.
+
+    Returns
+    -------
+    PublishPlan
+        The computed publication plan for the workspace and configuration.
+    """
     root_path = workspace.workspace_root if workspace_root is None else workspace_root
     configured_exclusions = tuple(configuration.publish.exclude)
     exclusion_set = set(configured_exclusions)
