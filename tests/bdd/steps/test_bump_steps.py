@@ -77,7 +77,9 @@ def then_command_reports_dry_run(
     assert f"would update version to {version}" in stdout
 
 
-@then(parsers.parse('the bump command reports an invalid version error for "{version}"'))
+@then(
+    parsers.parse('the bump command reports an invalid version error for "{version}"')
+)
 def then_bump_reports_invalid_version(
     cli_run: dict[str, typ.Any], version: str
 ) -> None:

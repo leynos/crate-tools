@@ -166,7 +166,8 @@ possible.
 #   publish order to still resolve local paths.
 # - false: No patches are stripped.
 #
-# If unset, the tool defaults to "all" for dry runs and "per-crate" for live runs.
+# If unset, the tool defaults to "all" for dry runs and "per-crate" for live
+# runs.
 strip_patches = "per-crate"
 
 ```
@@ -217,8 +218,8 @@ workspace graph, containing:
   (derived from `package.publish` in `Cargo.toml`).
 - `dependencies`: A list of its dependencies within the workspace. Each entry
   retains both the canonical crate name and the manifest key, so renamed
-  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched
-  back to the correct manifest entry when updating requirements.
+  dependencies (e.g., `alpha-core = { package = "alpha" }`) can be matched back
+  to the correct manifest entry when updating requirements.
 - `readme_is_workspace`: A boolean flag derived from checking if
   `package.readme.workspace` is `true`.
 
@@ -296,8 +297,8 @@ lading bump <new_version> [--dry-run]
 - The command reports a concise summary that enumerates every manifest path on
   its own line. The live mode prefix is `Updated version to <version> in …`,
   while dry runs use `Dry run; would update version to <version> in …`. When no
-  manifest requires changes the CLI reports:
-  `No manifest changes required; all versions already <version>.`
+  manifest requires changes the CLI reports: `No manifest changes required; all
+  versions already <version>.`
 - A `--dry-run` flag bypasses file writes entirely while still computing the
   manifest diff. This allows automation to preview the impact of a bump without
   touching the workspace.
@@ -315,9 +316,9 @@ lading bump <new_version> [--dry-run]
   TOML fences rewritten during a bump.
 - Markdown fences are parsed with `markdown-it-py` so indentation and
   language info strings are preserved. The fence bodies are parsed with
-  `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency entries
-  that reference workspace crates. Existing requirement operators and inline
-  trivia remain intact.
+  `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency
+  entries that reference workspace crates. Existing requirement operators and
+  inline trivia remain intact.
 - Documentation rewrites honour `--dry-run`; the command reports the files but
   skips writing to disk. The CLI summary now reports both manifest and
   documentation counts, and documentation entries are suffixed with

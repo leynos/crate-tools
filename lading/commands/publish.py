@@ -14,6 +14,8 @@ if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
+T = typ.TypeVar("T")
+
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishPlan:
@@ -93,6 +95,25 @@ def plan_publication(
         skipped_configuration=ordered_skipped_configuration,
         missing_configuration_exclusions=missing_exclusions,
     )
+
+
+def _append_section(
+    lines: list[str],
+    items: typ.Sequence[T],
+    *,
+    header: str,
+    formatter: typ.Callable[[T], str],
+    empty_message: str | None = None,
+) -> None:
+    """Append a formatted section describing ``items`` to ``lines``."""
+
+    if items:
+        lines.append(header)
+        lines.extend(formatter(item) for item in items)
+    elif empty_message:
+        lines.append(empty_message)
+
+
 def _format_plan(
     plan: PublishPlan, *, strip_patches: config_module.StripPatchesSetting
 ) -> str:
@@ -102,27 +123,67 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    if plan.publishable:
-        lines.append(f"Crates to publish ({len(plan.publishable)}):")
-        lines.extend(f"- {crate.name} @ {crate.version}" for crate in plan.publishable)
-    else:
-        lines.append("Crates to publish: none")
+    _append_section(
+        lines,
+        plan.publishable,
+        header=f"Crates to publish ({len(plan.publishable)}):",
+        formatter=lambda crate: f"- {crate.name} @ {crate.version}",
+        empty_message="Crates to publish: none",
+    )
 
-    if plan.skipped_manifest:
-        lines.append("Skipped (publish = false):")
-        lines.extend(f"- {crate.name}" for crate in plan.skipped_manifest)
+    _append_section(
+        lines,
+        plan.skipped_manifest,
+        header="Skipped (publish = false):",
+        formatter=lambda crate: f"- {crate.name}",
+    )
 
-    if plan.skipped_configuration:
-        lines.append("Skipped via publish.exclude:")
-        lines.extend(f"- {crate.name}" for crate in plan.skipped_configuration)
+    _append_section(
+        lines,
+        plan.skipped_configuration,
+        header="Skipped via publish.exclude:",
+        formatter=lambda crate: f"- {crate.name}",
+    )
 
-    if plan.missing_configuration_exclusions:
-        lines.append("Configured exclusions not found in workspace:")
-        lines.extend(
-            f"- {name}" for name in plan.missing_configuration_exclusions
-        )
+    _append_section(
+        lines,
+        plan.missing_configuration_exclusions,
+        header="Configured exclusions not found in workspace:",
+        formatter=lambda name: f"- {name}",
+    )
 
     return "\n".join(lines)
+
+
+def _ensure_configuration(
+    configuration: LadingConfig | None, workspace_root: Path
+) -> LadingConfig:
+    """Return the active configuration, loading it from disk when required."""
+
+    if configuration is not None:
+        return configuration
+
+    try:
+        return config_module.current_configuration()
+    except config_module.ConfigurationNotLoadedError:
+        return config_module.load_configuration(workspace_root)
+
+
+def _ensure_workspace(
+    workspace: WorkspaceGraph | None, workspace_root: Path
+) -> WorkspaceGraph:
+    """Return the workspace graph rooted at ``workspace_root``."""
+
+    if workspace is not None:
+        return workspace
+
+    from lading.workspace import WorkspaceModelError, load_workspace
+
+    try:
+        return load_workspace(workspace_root)
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
+        message = f"Workspace root not found: {workspace_root}"
+        raise WorkspaceModelError(message) from exc
 
 
 def run(
@@ -133,20 +194,10 @@ def run(
     """Plan crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
 
-    if configuration is None:
-        try:
-            configuration = config_module.current_configuration()
-        except config_module.ConfigurationNotLoadedError:
-            configuration = config_module.load_configuration(root_path)
+    active_configuration = _ensure_configuration(configuration, root_path)
+    active_workspace = _ensure_workspace(workspace, root_path)
 
-    if workspace is None:
-        from lading.workspace import WorkspaceModelError, load_workspace
-
-        try:
-            workspace = load_workspace(root_path)
-        except FileNotFoundError as exc:  # pragma: no cover - defensive
-            message = f"Workspace root not found: {root_path}"
-            raise WorkspaceModelError(message) from exc
-
-    plan = plan_publication(workspace, configuration, workspace_root=root_path)
-    return _format_plan(plan, strip_patches=configuration.publish.strip_patches)
+    plan = plan_publication(
+        active_workspace, active_configuration, workspace_root=root_path
+    )
+    return _format_plan(plan, strip_patches=active_configuration.publish.strip_patches)
