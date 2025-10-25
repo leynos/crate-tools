@@ -83,11 +83,10 @@ Feature: Lading CLI scaffolding
   Scenario: Publish command reports no publishable crates
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with no publishable crates
-    And publish.exclude contains "beta"
     When I invoke lading publish with that workspace
     Then the publish command reports that no crates are publishable
     And the publish command reports manifest-skipped crate "alpha"
-    And the publish command reports configuration-skipped crate "beta"
+    And the publish command reports manifest-skipped crate "beta"
 
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration

@@ -97,21 +97,19 @@ def plan_publication(
     )
 
 
-def _append_section(
-    lines: list[str],
+def _section_lines(
     items: typ.Sequence[T],
     *,
     header: str,
     formatter: typ.Callable[[T], str],
     empty_message: str | None = None,
-) -> None:
-    """Append a formatted section describing ``items`` to ``lines``."""
-
+) -> list[str]:
+    """Return formatted lines describing ``items``."""
     if items:
-        lines.append(header)
-        lines.extend(formatter(item) for item in items)
-    elif empty_message:
-        lines.append(empty_message)
+        return [header, *map(formatter, items)]
+    if empty_message:
+        return [empty_message]
+    return []
 
 
 def _format_plan(
@@ -123,33 +121,37 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    _append_section(
-        lines,
-        plan.publishable,
-        header=f"Crates to publish ({len(plan.publishable)}):",
-        formatter=lambda crate: f"- {crate.name} @ {crate.version}",
-        empty_message="Crates to publish: none",
+    lines.extend(
+        _section_lines(
+            plan.publishable,
+            header=f"Crates to publish ({len(plan.publishable)}):",
+            formatter=lambda crate: f"- {crate.name} @ {crate.version}",
+            empty_message="Crates to publish: none",
+        )
     )
 
-    _append_section(
-        lines,
-        plan.skipped_manifest,
-        header="Skipped (publish = false):",
-        formatter=lambda crate: f"- {crate.name}",
+    lines.extend(
+        _section_lines(
+            plan.skipped_manifest,
+            header="Skipped (publish = false):",
+            formatter=lambda crate: f"- {crate.name}",
+        )
     )
 
-    _append_section(
-        lines,
-        plan.skipped_configuration,
-        header="Skipped via publish.exclude:",
-        formatter=lambda crate: f"- {crate.name}",
+    lines.extend(
+        _section_lines(
+            plan.skipped_configuration,
+            header="Skipped via publish.exclude:",
+            formatter=lambda crate: f"- {crate.name}",
+        )
     )
 
-    _append_section(
-        lines,
-        plan.missing_configuration_exclusions,
-        header="Configured exclusions not found in workspace:",
-        formatter=lambda name: f"- {name}",
+    lines.extend(
+        _section_lines(
+            plan.missing_configuration_exclusions,
+            header="Configured exclusions not found in workspace:",
+            formatter=lambda name: f"- {name}",
+        )
     )
 
     return "\n".join(lines)
@@ -159,7 +161,6 @@ def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
     """Return the active configuration, loading it from disk when required."""
-
     if configuration is not None:
         return configuration
 
@@ -173,7 +174,6 @@ def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
     """Return the workspace graph rooted at ``workspace_root``."""
-
     if workspace is not None:
         return workspace
 

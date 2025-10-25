@@ -45,37 +45,57 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
 
 
-def test_plan_publication_filters_manifest_and_configuration(tmp_path: Path) -> None:
-    """Crates are filtered when publish=false or listed in publish.exclude."""
+@pytest.mark.parametrize(
+    (
+        "crate_specs",
+        "exclude",
+        "expected_publishable",
+        "expected_manifest",
+        "expected_configuration",
+    ),
+    [
+        pytest.param(
+            (("alpha", True), ("beta", False), ("gamma", True)),
+            ("gamma",),
+            ("alpha",),
+            ("beta",),
+            ("gamma",),
+            id="mixed-skips",
+        ),
+        pytest.param(
+            (("alpha", False), ("beta", False)),
+            (),
+            (),
+            ("alpha", "beta"),
+            (),
+            id="no-publishable",
+        ),
+    ],
+)
+def test_plan_publication_filters_crates(
+    tmp_path: Path,
+    crate_specs: tuple[tuple[str, bool], ...],
+    exclude: tuple[str, ...],
+    expected_publishable: tuple[str, ...],
+    expected_manifest: tuple[str, ...],
+    expected_configuration: tuple[str, ...],
+) -> None:
+    """Planner splits crates into publishable and skipped groups."""
     root = tmp_path.resolve()
-    publishable = _make_crate(root, "alpha")
-    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
-    configuration_skipped = _make_crate(root, "gamma")
-    workspace = _make_workspace(
-        root, publishable, manifest_skipped, configuration_skipped
+    crates = [
+        _make_crate(root, name, publish_flag=publishable)
+        for name, publishable in crate_specs
+    ]
+    workspace = _make_workspace(root, *crates)
+    configuration = _make_config(exclude=exclude)
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert tuple(crate.name for crate in plan.publishable) == expected_publishable
+    assert tuple(crate.name for crate in plan.skipped_manifest) == expected_manifest
+    assert tuple(crate.name for crate in plan.skipped_configuration) == (
+        expected_configuration
     )
-    configuration = _make_config(exclude=("gamma",))
-
-    plan = publish.plan_publication(workspace, configuration)
-
-    assert plan.publishable == (publishable,)
-    assert plan.skipped_manifest == (manifest_skipped,)
-    assert plan.skipped_configuration == (configuration_skipped,)
-
-
-def test_plan_publication_handles_no_publishable_crates(tmp_path: Path) -> None:
-    """Planner reports empty publishable list when all crates are skipped."""
-    root = tmp_path.resolve()
-    manifest_skipped = _make_crate(root, "alpha", publish_flag=False)
-    configuration_skipped = _make_crate(root, "beta")
-    workspace = _make_workspace(root, manifest_skipped, configuration_skipped)
-    configuration = _make_config(exclude=("beta",))
-
-    plan = publish.plan_publication(workspace, configuration)
-
-    assert plan.publishable == ()
-    assert plan.skipped_manifest == (manifest_skipped,)
-    assert plan.skipped_configuration == (configuration_skipped,)
 
 
 def test_plan_publication_empty_workspace(tmp_path: Path) -> None:

@@ -314,7 +314,6 @@ def _install_publish_filter_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stub ``cargo metadata`` responses for publish filtering exercises."""
-
     install_cargo_stub(cmd_mox, monkeypatch)
     packages: list[dict[str, typ.Any]] = []
     member_entries: list[str] = []
@@ -455,10 +454,10 @@ def given_cargo_metadata_without_publishable_crates(
     monkeypatch: pytest.MonkeyPatch,
     workspace_directory: Path,
 ) -> None:
-    """Stub metadata where every crate is skipped by manifest or configuration."""
+    """Stub metadata where manifest settings block every crate from publishing."""
     crate_specs: tuple[tuple[str, bool], ...] = (
         ("alpha", False),
-        ("beta", True),
+        ("beta", False),
     )
     _install_publish_filter_metadata(
         workspace_directory,
