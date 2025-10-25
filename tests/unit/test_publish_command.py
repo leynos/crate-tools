@@ -47,55 +47,89 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
 
 @pytest.mark.parametrize(
     (
+        "test_id",
         "crate_specs",
-        "exclude",
-        "expected_publishable",
-        "expected_manifest",
-        "expected_configuration",
+        "exclude_list",
+        "expected_counts",
     ),
     [
         pytest.param(
-            (("alpha", True), ("beta", False), ("gamma", True)),
-            ("gamma",),
-            ("alpha",),
-            ("beta",),
-            ("gamma",),
-            id="mixed-skips",
+            "filters_manifest_and_configuration",
+            [("alpha", True), ("beta", False), ("gamma", True)],
+            ["gamma"],
+            (1, 1, 1),
+            id="filters_manifest_and_configuration",
         ),
         pytest.param(
-            (("alpha", False), ("beta", False)),
-            (),
-            (),
-            ("alpha", "beta"),
-            (),
-            id="no-publishable",
+            "handles_no_publishable_crates",
+            [("alpha", False), ("beta", True)],
+            ["beta"],
+            (0, 1, 1),
+            id="handles_no_publishable_crates",
         ),
     ],
 )
-def test_plan_publication_filters_crates(
+def test_plan_publication_filtering(
     tmp_path: Path,
-    crate_specs: tuple[tuple[str, bool], ...],
-    exclude: tuple[str, ...],
-    expected_publishable: tuple[str, ...],
-    expected_manifest: tuple[str, ...],
-    expected_configuration: tuple[str, ...],
+    test_id: str,
+    crate_specs: list[tuple[str, bool]],
+    exclude_list: list[str],
+    expected_counts: tuple[int, int, int],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
+
     root = tmp_path.resolve()
     crates = [
-        _make_crate(root, name, publish_flag=publishable)
-        for name, publishable in crate_specs
+        _make_crate(root, name, publish_flag=publish_flag)
+        for name, publish_flag in crate_specs
     ]
     workspace = _make_workspace(root, *crates)
-    configuration = _make_config(exclude=exclude)
+    configuration = _make_config(exclude=tuple(exclude_list))
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert tuple(crate.name for crate in plan.publishable) == expected_publishable
-    assert tuple(crate.name for crate in plan.skipped_manifest) == expected_manifest
-    assert tuple(crate.name for crate in plan.skipped_configuration) == (
-        expected_configuration
+    expected_publishable_count, expected_manifest_count, expected_configuration_count = (
+        expected_counts
     )
+    exclude_set = set(exclude_list)
+
+    expected_publishable_names = tuple(
+        sorted(
+            name
+            for name, publish_flag in crate_specs
+            if publish_flag and name not in exclude_set
+        )
+    )
+    expected_manifest_names = tuple(
+        sorted(name for name, publish_flag in crate_specs if not publish_flag)
+    )
+    expected_configuration_names = tuple(
+        sorted(
+            name
+            for name, publish_flag in crate_specs
+            if publish_flag and name in exclude_set
+        )
+    )
+
+    actual_publishable_names = tuple(crate.name for crate in plan.publishable)
+    actual_manifest_names = tuple(crate.name for crate in plan.skipped_manifest)
+    actual_configuration_names = tuple(
+        crate.name for crate in plan.skipped_configuration
+    )
+
+    assert (
+        len(plan.publishable) == expected_publishable_count
+    ), f"unexpected publishable count for {test_id}"
+    assert len(plan.skipped_manifest) == expected_manifest_count, (
+        f"unexpected manifest-skipped count for {test_id}"
+    )
+    assert len(plan.skipped_configuration) == expected_configuration_count, (
+        f"unexpected configuration-skipped count for {test_id}"
+    )
+
+    assert actual_publishable_names == expected_publishable_names
+    assert actual_manifest_names == expected_manifest_names
+    assert actual_configuration_names == expected_configuration_names
 
 
 def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
