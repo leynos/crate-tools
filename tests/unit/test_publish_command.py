@@ -81,7 +81,6 @@ def test_plan_publication_filtering(
     expected: dict[str, tuple[str, ...]],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
-
     root = tmp_path.resolve()
     crates = [
         _make_crate(root, name, publish_flag=publish_flag)
@@ -92,46 +91,10 @@ def test_plan_publication_filtering(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    exclude_set = set(exclude)
-
-    expected_publishable_names = tuple(
-        sorted(
-            name
-            for name, publish_flag in crate_specs
-            if publish_flag and name not in exclude_set
-        )
-    )
-    expected_manifest_names = tuple(
-        sorted(name for name, publish_flag in crate_specs if not publish_flag)
-    )
-    expected_configuration_names = tuple(
-        sorted(
-            name
-            for name, publish_flag in crate_specs
-            if publish_flag and name in exclude_set
-        )
-    )
-
-    assert expected_publishable_names == expected["publishable"]
-    assert expected_manifest_names == expected["manifest"]
-    assert expected_configuration_names == expected["configuration"]
-
     actual_publishable_names = tuple(crate.name for crate in plan.publishable)
     actual_manifest_names = tuple(crate.name for crate in plan.skipped_manifest)
     actual_configuration_names = tuple(
         crate.name for crate in plan.skipped_configuration
-    )
-
-    assert len(plan.publishable) == len(expected["publishable"]), (
-        f"unexpected publishable count for crate_specs={crate_specs} exclude={exclude}"
-    )
-    assert len(plan.skipped_manifest) == len(expected["manifest"]), (
-        "unexpected manifest-skipped count for "
-        f"crate_specs={crate_specs} exclude={exclude}"
-    )
-    assert len(plan.skipped_configuration) == len(expected["configuration"]), (
-        "unexpected configuration-skipped count for "
-        f"crate_specs={crate_specs} exclude={exclude}"
     )
 
     assert actual_publishable_names == expected["publishable"]
