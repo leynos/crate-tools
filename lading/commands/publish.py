@@ -97,19 +97,19 @@ def plan_publication(
     )
 
 
-def _format_section(
-    items: tuple[T, ...],
+def _section_lines(
+    items: typ.Sequence[T],
     *,
     header: str,
-    item_formatter: typ.Callable[[T], str],
-    empty_lines: tuple[str, ...] = (),
+    formatter: typ.Callable[[T], str],
+    empty_message: str | None = None,
 ) -> list[str]:
-    """Return ``header`` and formatted ``items`` when any are present."""
-    if not items:
-        return list(empty_lines)
-
-    formatted_items = [item_formatter(item) for item in items]
-    return [header, *formatted_items]
+    """Return formatted lines describing ``items``."""
+    if items:
+        return [header, *map(formatter, items)]
+    if empty_message:
+        return [empty_message]
+    return []
 
 
 def _format_plan(
@@ -122,32 +122,35 @@ def _format_plan(
     ]
 
     lines.extend(
-        _format_section(
+        _section_lines(
             plan.publishable,
             header=f"Crates to publish ({len(plan.publishable)}):",
-            item_formatter=lambda crate: f"- {crate.name} @ {crate.version}",
-            empty_lines=("Crates to publish: none",),
+            formatter=lambda crate: f"- {crate.name} @ {crate.version}",
+            empty_message="Crates to publish: none",
         )
     )
+
     lines.extend(
-        _format_section(
+        _section_lines(
             plan.skipped_manifest,
             header="Skipped (publish = false):",
-            item_formatter=lambda crate: f"- {crate.name}",
+            formatter=lambda crate: f"- {crate.name}",
         )
     )
+
     lines.extend(
-        _format_section(
+        _section_lines(
             plan.skipped_configuration,
             header="Skipped via publish.exclude:",
-            item_formatter=lambda crate: f"- {crate.name}",
+            formatter=lambda crate: f"- {crate.name}",
         )
     )
+
     lines.extend(
-        _format_section(
+        _section_lines(
             plan.missing_configuration_exclusions,
             header="Configured exclusions not found in workspace:",
-            item_formatter=lambda name: f"- {name}",
+            formatter=lambda name: f"- {name}",
         )
     )
 
@@ -157,7 +160,7 @@ def _format_plan(
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
-    """Return active configuration, loading it if necessary."""
+    """Return the active configuration, loading it from disk when required."""
     if configuration is not None:
         return configuration
 
@@ -170,7 +173,7 @@ def _ensure_configuration(
 def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
-    """Return workspace graph, loading it if necessary."""
+    """Return the workspace graph rooted at ``workspace_root``."""
     if workspace is not None:
         return workspace
 
@@ -178,7 +181,7 @@ def _ensure_workspace(
 
     try:
         return load_workspace(workspace_root)
-    except FileNotFoundError as exc:
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
 
@@ -190,6 +193,7 @@ def run(
 ) -> str:
     """Plan crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
+
     active_configuration = _ensure_configuration(configuration, root_path)
     active_workspace = _ensure_workspace(workspace, root_path)
 
