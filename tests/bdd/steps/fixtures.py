@@ -434,15 +434,14 @@ def given_cargo_metadata_with_publish_filters(
     workspace_directory: Path,
 ) -> None:
     """Stub metadata illustrating publishable, skipped, and missing crates."""
-    crate_specs: tuple[tuple[str, bool], ...] = (
-        ("alpha", True),
-        ("beta", False),
-        ("gamma", True),
-        ("delta", True),
-    )
     _install_publish_filter_metadata(
         workspace_directory,
-        crate_specs,
+        (
+            ("alpha", True),
+            ("beta", False),
+            ("gamma", True),
+            ("delta", True),
+        ),
         cmd_mox=cmd_mox,
         monkeypatch=monkeypatch,
     )
@@ -455,13 +454,12 @@ def given_cargo_metadata_without_publishable_crates(
     workspace_directory: Path,
 ) -> None:
     """Stub metadata where manifest settings block every crate from publishing."""
-    crate_specs: tuple[tuple[str, bool], ...] = (
-        ("alpha", False),
-        ("beta", False),
-    )
     _install_publish_filter_metadata(
         workspace_directory,
-        crate_specs,
+        (
+            ("alpha", False),
+            ("beta", False),
+        ),
         cmd_mox=cmd_mox,
         monkeypatch=monkeypatch,
     )

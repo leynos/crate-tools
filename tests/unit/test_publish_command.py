@@ -47,34 +47,38 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
 
 @pytest.mark.parametrize(
     (
-        "test_id",
         "crate_specs",
-        "exclude_list",
-        "expected_counts",
+        "exclude",
+        "expected",
     ),
     [
         pytest.param(
-            "filters_manifest_and_configuration",
             [("alpha", True), ("beta", False), ("gamma", True)],
             ["gamma"],
-            (1, 1, 1),
+            {
+                "publishable": ("alpha",),
+                "manifest": ("beta",),
+                "configuration": ("gamma",),
+            },
             id="filters_manifest_and_configuration",
         ),
         pytest.param(
-            "handles_no_publishable_crates",
-            [("alpha", False), ("beta", True)],
-            ["beta"],
-            (0, 1, 1),
+            [("alpha", False), ("beta", False)],
+            [],
+            {
+                "publishable": (),
+                "manifest": ("alpha", "beta"),
+                "configuration": (),
+            },
             id="handles_no_publishable_crates",
         ),
     ],
 )
 def test_plan_publication_filtering(
     tmp_path: Path,
-    test_id: str,
     crate_specs: list[tuple[str, bool]],
-    exclude_list: list[str],
-    expected_counts: tuple[int, int, int],
+    exclude: list[str],
+    expected: dict[str, tuple[str, ...]],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
 
@@ -84,16 +88,11 @@ def test_plan_publication_filtering(
         for name, publish_flag in crate_specs
     ]
     workspace = _make_workspace(root, *crates)
-    configuration = _make_config(exclude=tuple(exclude_list))
+    configuration = _make_config(exclude=tuple(exclude))
 
     plan = publish.plan_publication(workspace, configuration)
 
-    (
-        expected_publishable_count,
-        expected_manifest_count,
-        expected_configuration_count,
-    ) = expected_counts
-    exclude_set = set(exclude_list)
+    exclude_set = set(exclude)
 
     expected_publishable_names = tuple(
         sorted(
@@ -113,25 +112,31 @@ def test_plan_publication_filtering(
         )
     )
 
+    assert expected_publishable_names == expected["publishable"]
+    assert expected_manifest_names == expected["manifest"]
+    assert expected_configuration_names == expected["configuration"]
+
     actual_publishable_names = tuple(crate.name for crate in plan.publishable)
     actual_manifest_names = tuple(crate.name for crate in plan.skipped_manifest)
     actual_configuration_names = tuple(
         crate.name for crate in plan.skipped_configuration
     )
 
-    assert len(plan.publishable) == expected_publishable_count, (
-        f"unexpected publishable count for {test_id}"
+    assert len(plan.publishable) == len(expected["publishable"]), (
+        f"unexpected publishable count for crate_specs={crate_specs} exclude={exclude}"
     )
-    assert len(plan.skipped_manifest) == expected_manifest_count, (
-        f"unexpected manifest-skipped count for {test_id}"
+    assert len(plan.skipped_manifest) == len(expected["manifest"]), (
+        "unexpected manifest-skipped count for "
+        f"crate_specs={crate_specs} exclude={exclude}"
     )
-    assert len(plan.skipped_configuration) == expected_configuration_count, (
-        f"unexpected configuration-skipped count for {test_id}"
+    assert len(plan.skipped_configuration) == len(expected["configuration"]), (
+        "unexpected configuration-skipped count for "
+        f"crate_specs={crate_specs} exclude={exclude}"
     )
 
-    assert actual_publishable_names == expected_publishable_names
-    assert actual_manifest_names == expected_manifest_names
-    assert actual_configuration_names == expected_configuration_names
+    assert actual_publishable_names == expected["publishable"]
+    assert actual_manifest_names == expected["manifest"]
+    assert actual_configuration_names == expected["configuration"]
 
 
 def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
