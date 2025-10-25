@@ -337,10 +337,10 @@ def _install_publish_filter_metadata(
                 publish=None if publishable else False,
             )
         )
-        member_entries.append(f'"crates/{name}"')
+        member_entries.append(f"crates/{name}")
 
     workspace_manifest = workspace_directory / "Cargo.toml"
-    members_literal = ", ".join(member_entries)
+    members_literal = ", ".join(f'"{member}"' for member in member_entries)
     workspace_manifest.write_text(
         textwrap.dedent(
             f"""

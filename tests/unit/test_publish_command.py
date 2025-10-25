@@ -88,9 +88,11 @@ def test_plan_publication_filtering(
 
     plan = publish.plan_publication(workspace, configuration)
 
-    expected_publishable_count, expected_manifest_count, expected_configuration_count = (
-        expected_counts
-    )
+    (
+        expected_publishable_count,
+        expected_manifest_count,
+        expected_configuration_count,
+    ) = expected_counts
     exclude_set = set(exclude_list)
 
     expected_publishable_names = tuple(
@@ -117,9 +119,9 @@ def test_plan_publication_filtering(
         crate.name for crate in plan.skipped_configuration
     )
 
-    assert (
-        len(plan.publishable) == expected_publishable_count
-    ), f"unexpected publishable count for {test_id}"
+    assert len(plan.publishable) == expected_publishable_count, (
+        f"unexpected publishable count for {test_id}"
+    )
     assert len(plan.skipped_manifest) == expected_manifest_count, (
         f"unexpected manifest-skipped count for {test_id}"
     )
