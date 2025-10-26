@@ -350,6 +350,7 @@ def test_run_surfaces_configuration_errors(
 
 def test_append_section_appends_formatted_items() -> None:
     """Generic section helper applies the provided formatter."""
+
     class Dummy:
         def __init__(self, value: str) -> None:
             self.value = value
