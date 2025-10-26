@@ -36,6 +36,25 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     assert f"- {crate_name} @ 0.1.0" in lines
 
 
+@then(parsers.parse('the publish command lists crates in order "{crate_names}"'))
+def then_publish_lists_crates_in_order(
+    cli_run: dict[str, typ.Any], crate_names: str
+) -> None:
+    """Assert that publishable crates appear in the expected order."""
+    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    lines = _publish_plan_lines(cli_run)
+    header = f"Crates to publish ({len(expected)}):"
+    assert header in lines
+    section_index = lines.index(header)
+    publish_lines: list[str] = []
+    for line in lines[section_index + 1 :]:
+        if not line.startswith("- "):
+            break
+        publish_lines.append(line[2:])
+    actual = [entry.split(" @ ", 1)[0] for entry in publish_lines]
+    assert actual == expected
+
+
 @then("the publish command reports that no crates are publishable")
 def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the publish command highlights the empty publish list."""

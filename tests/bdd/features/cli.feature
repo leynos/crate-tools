@@ -88,6 +88,19 @@ Feature: Lading CLI scaffolding
     And the publish command reports manifest-skipped crate "alpha"
     And the publish command reports manifest-skipped crate "beta"
 
+  Scenario: Publish command orders crates by dependency
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    When I invoke lading publish with that workspace
+    Then the publish command lists crates in order "alpha, beta, gamma"
+
+  Scenario: Publish command honours configured order
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    And publish.order is "gamma, beta, alpha"
+    When I invoke lading publish with that workspace
+    Then the publish command lists crates in order "gamma, beta, alpha"
+
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
     When I invoke lading bump 1.2.3 with that workspace

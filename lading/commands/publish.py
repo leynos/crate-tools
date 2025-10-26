@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import heapq
 import typing as typ
+from collections import defaultdict
 
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
@@ -13,6 +15,10 @@ if typ.TYPE_CHECKING:
 
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
+
+
+class PublishPlanError(RuntimeError):
+    """Raised when the publish plan cannot be constructed."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -29,6 +35,116 @@ class PublishPlan:
     def publishable_names(self) -> tuple[str, ...]:
         """Return the names of crates scheduled for publication."""
         return tuple(crate.name for crate in self.publishable)
+
+
+def _order_publishable_crates(
+    crates: typ.Sequence[WorkspaceCrate],
+    configuration: config_module.LadingConfig,
+) -> tuple[WorkspaceCrate, ...]:
+    """Return ``crates`` ordered according to configuration or dependencies."""
+    if not crates:
+        return ()
+
+    crates_by_name = {crate.name: crate for crate in crates}
+    configured_order = configuration.publish.order
+    if configured_order:
+        return _order_by_configuration(crates_by_name, configured_order)
+    return _topologically_order_crates(crates_by_name)
+
+
+def _order_by_configuration(
+    crates_by_name: dict[str, WorkspaceCrate],
+    configured_order: typ.Sequence[str],
+) -> tuple[WorkspaceCrate, ...]:
+    """Return crates according to ``configured_order`` after validation."""
+    seen: set[str] = set()
+    resolved: list[WorkspaceCrate] = []
+    duplicates: set[str] = set()
+    unknown: list[str] = []
+
+    for crate_name in configured_order:
+        if crate_name in seen:
+            duplicates.add(crate_name)
+            continue
+        crate = crates_by_name.get(crate_name)
+        if crate is None:
+            unknown.append(crate_name)
+            continue
+        seen.add(crate_name)
+        resolved.append(crate)
+
+    missing = sorted(name for name in crates_by_name if name not in seen)
+    messages: list[str] = []
+    if duplicates:
+        duplicate_list = ", ".join(sorted(duplicates))
+        messages.append(f"Duplicate publish.order entries: {duplicate_list}")
+    if unknown:
+        unknown_list = ", ".join(unknown)
+        messages.append(
+            "publish.order references crates outside the publishable set: "
+            f"{unknown_list}"
+        )
+    if missing:
+        missing_list = ", ".join(missing)
+        messages.append(f"publish.order omits publishable crate(s): {missing_list}")
+
+    if messages:
+        raise PublishPlanError("; ".join(messages))
+
+    return tuple(resolved)
+
+
+def _topologically_order_crates(
+    crates_by_name: dict[str, WorkspaceCrate],
+) -> tuple[WorkspaceCrate, ...]:
+    """Return ``crates_by_name`` ordered by workspace dependencies."""
+    dependency_map: dict[str, tuple[str, ...]] = {}
+    for crate in crates_by_name.values():
+        dependency_names = {
+            dependency.name
+            for dependency in crate.dependencies
+            if dependency.name in crates_by_name
+        }
+        dependency_map[crate.name] = tuple(sorted(dependency_names))
+
+    incoming_counts = {
+        name: len(dependencies) for name, dependencies in dependency_map.items()
+    }
+    dependents: defaultdict[str, set[str]] = defaultdict(set)
+    for name, dependencies in dependency_map.items():
+        for dependency_name in dependencies:
+            dependents[dependency_name].add(name)
+
+    available = [name for name, count in incoming_counts.items() if count == 0]
+    heapq.heapify(available)
+    ordered_names: list[str] = []
+
+    while available:
+        current = heapq.heappop(available)
+        ordered_names.append(current)
+        for dependent in dependents[current]:
+            incoming_counts[dependent] -= 1
+            if incoming_counts[dependent] == 0:
+                heapq.heappush(available, dependent)
+
+    if len(ordered_names) != len(crates_by_name):
+        cycle_nodes = [
+            name
+            for name, count in incoming_counts.items()
+            if count > 0 and name not in ordered_names
+        ]
+        cycle_nodes.extend(
+            name
+            for name in crates_by_name
+            if name not in ordered_names and name not in cycle_nodes
+        )
+        cycle_list = ", ".join(sorted(cycle_nodes))
+        message = "Cannot determine publish order due to dependency cycle"
+        if cycle_list:
+            message = f"{message} involving: {cycle_list}"
+        raise PublishPlanError(message)
+
+    return tuple(crates_by_name[name] for name in ordered_names)
 
 
 def plan_publication(
@@ -78,7 +194,7 @@ def plan_publication(
         sorted(name for name in configured_exclusions if name not in crate_names)
     )
 
-    ordered_publishable = tuple(sorted(publishable, key=lambda crate: crate.name))
+    ordered_publishable = _order_publishable_crates(publishable, configuration)
     ordered_skipped_manifest = tuple(
         sorted(skipped_manifest, key=lambda crate: crate.name)
     )

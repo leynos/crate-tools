@@ -362,6 +362,14 @@ lading publish [--live] [--allow-dirty]
       publication sequence. If the graph contains cycles, the command will
       abort with an error.
 
+Implementation note: the planner now performs a deterministic topological sort
+using Kahn's algorithm with a lexicographically ordered queue so that parallel
+branches remain stable across runs. The resulting `PublishPlan` raises a
+`PublishPlanError` when a cycle prevents ordering, surfacing the crates involved
+to the operator. When `publish.order` is configured the planner validates that
+every publishable crate appears exactly once and that no unknown names are
+listed before returning the user-specified order.
+
 4. **Prepare Workspace Manifest**: Within the temporary clone of the
    repository, determine the patch stripping strategy based on the
    publish.strip_patches configuration and the execution mode (--dry-run flag).

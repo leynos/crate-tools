@@ -465,6 +465,74 @@ def given_cargo_metadata_without_publishable_crates(
     )
 
 
+@given("cargo metadata describes a workspace with a publish dependency chain")
+def given_cargo_metadata_with_dependency_chain(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata for crates that depend on one another in sequence."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+
+    alpha_manifest = _create_test_crate(workspace_directory, "alpha", "0.1.0")
+    beta_manifest = _create_test_crate(
+        workspace_directory,
+        "beta",
+        "0.1.0",
+        dependencies_toml="""
+            [dependencies]
+            alpha = { version = "0.1.0", path = "../alpha" }
+        """,
+    )
+    gamma_manifest = _create_test_crate(
+        workspace_directory,
+        "gamma",
+        "0.1.0",
+        dependencies_toml="""
+            [dependencies]
+            beta = { version = "0.1.0", path = "../beta" }
+        """,
+    )
+
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            """
+            [workspace]
+            members = ["crates/alpha", "crates/beta", "crates/gamma"]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": [
+            _build_package_metadata("alpha", alpha_manifest),
+            _build_package_metadata(
+                "beta",
+                beta_manifest,
+                dependencies=[{"name": "alpha", "package": "alpha-id"}],
+            ),
+            _build_package_metadata(
+                "gamma",
+                gamma_manifest,
+                dependencies=[{"name": "beta", "package": "beta-id"}],
+            ),
+        ],
+        "workspace_members": ["alpha-id", "beta-id", "gamma-id"],
+    }
+
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+        stderr="",
+    )
+
+
 def _add_exclude_to_config(
     workspace_directory: Path,
     table_name: str,
@@ -505,3 +573,23 @@ def given_publish_exclude_contains(
 ) -> None:
     """Ensure ``crate_name`` appears in the ``publish.exclude`` configuration."""
     _add_exclude_to_config(workspace_directory, "publish", crate_name)
+
+
+@given(parsers.parse('publish.order is "{order}"'))
+def given_publish_order_is(workspace_directory: Path, order: str) -> None:
+    """Set the publish order configuration to ``order``."""
+    names = [name.strip() for name in order.split(",") if name.strip()]
+    config_path = workspace_directory / config_module.CONFIG_FILENAME
+    if config_path.exists():
+        doc = parse_toml(config_path.read_text(encoding="utf-8"))
+    else:
+        doc = make_document()
+    publish_table = doc.get("publish")
+    if publish_table is None:
+        publish_table = table()
+        doc["publish"] = publish_table
+    order_array = array()
+    for name in names:
+        order_array.append(name)
+    publish_table["order"] = order_array
+    config_path.write_text(doc.as_string(), encoding="utf-8")

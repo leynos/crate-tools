@@ -8,7 +8,12 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate, WorkspaceGraph, WorkspaceModelError
+from lading.workspace import (
+    WorkspaceCrate,
+    WorkspaceDependency,
+    WorkspaceGraph,
+    WorkspaceModelError,
+)
 
 
 def _make_config(**overrides: object) -> config_module.LadingConfig:
@@ -22,6 +27,7 @@ def _make_crate(
     name: str,
     *,
     publish_flag: bool = True,
+    dependencies: tuple[WorkspaceDependency, ...] | None = None,
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``."""
     crate_root = root / name
@@ -34,7 +40,7 @@ def _make_crate(
         root_path=crate_root,
         publish=publish_flag,
         readme_is_workspace=False,
-        dependencies=(),
+        dependencies=() if dependencies is None else dependencies,
     )
 
 
@@ -43,6 +49,16 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     if not crates:
         crates = (_make_crate(root, "alpha"),)
     return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
+
+
+def _make_dependency(name: str) -> WorkspaceDependency:
+    """Return a workspace dependency pointing at the crate named ``name``."""
+    return WorkspaceDependency(
+        package_id=f"{name}-id",
+        name=name,
+        manifest_name=name,
+        kind=None,
+    )
 
 
 @pytest.mark.parametrize(
@@ -197,6 +213,79 @@ def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
 
     assert plan.publishable == ()
     assert plan.skipped_configuration == (delta, gamma)
+
+
+def test_plan_publication_topologically_orders_dependencies(tmp_path: Path) -> None:
+    """Crates are sorted so that dependencies publish before their dependents."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
+    workspace = _make_workspace(root, gamma, beta, alpha)
+    configuration = _make_config()
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (alpha, beta, gamma)
+
+
+def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
+    """A dependency cycle raises an explicit planning error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha", dependencies=(_make_dependency("beta"),))
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config()
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    assert "dependency cycle" in str(excinfo.value)
+
+
+def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
+    """Explicit publish.order values override the automatic dependency sort."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
+    workspace = _make_workspace(root, alpha, beta, gamma)
+    configuration = _make_config(order=("gamma", "beta", "alpha"))
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (gamma, beta, alpha)
+
+
+def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) -> None:
+    """Missing crates in publish.order surface a descriptive validation error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta")
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config(order=("alpha",))
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    message = str(excinfo.value)
+    assert "publish.order omits" in message
+    assert "beta" in message
+
+
+def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> None:
+    """Names outside the publishable set trigger an informative error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    workspace = _make_workspace(root, alpha)
+    configuration = _make_config(order=("alpha", "omega"))
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    assert "publish.order references crates outside the publishable set" in str(
+        excinfo.value
+    )
 
 
 def test_run_normalises_workspace_root(
