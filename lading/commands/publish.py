@@ -8,8 +8,6 @@ import typing as typ
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
 
-T = typ.TypeVar("T")
-
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
@@ -126,25 +124,26 @@ def _format_crates_section(
         lines.append(empty_message)
 
 
-def _format_items_section(
+def _append_section[T](
     lines: list[str],
-    items: tuple[T, ...],
+    items: typ.Sequence[T],
     *,
     header: str,
-    formatter: typ.Callable[[T], str],
+    formatter: typ.Callable[[T], str] = str,
 ) -> None:
-    """Append formatted items to ``lines``.
+    """Append formatted ``items`` to ``lines`` when a section has content.
 
     Parameters
     ----------
     lines : list[str]
         Mutable buffer that collects the formatted plan output lines.
-    items : tuple[T, ...]
+    items : Sequence[T]
         Items that should be included in the formatted section.
     header : str
         Section header to prepend when ``items`` are present.
-    formatter : Callable[[T], str]
-        Callable that formats each item into a string for display.
+    formatter : Callable[[T], str], optional
+        Callable that formats each item into a string for display. Defaults to
+        :class:`str` to make simple string sequences ergonomic.
 
     """
     if items:
@@ -167,23 +166,22 @@ def _format_plan(
         header=f"Crates to publish ({len(plan.publishable)}):",
         empty_message="Crates to publish: none",
     )
-    _format_items_section(
+    _append_section(
         lines,
         plan.skipped_manifest,
         header="Skipped (publish = false):",
         formatter=lambda crate: crate.name,
     )
-    _format_items_section(
+    _append_section(
         lines,
         plan.skipped_configuration,
         header="Skipped via publish.exclude:",
         formatter=lambda crate: crate.name,
     )
-    _format_items_section(
+    _append_section(
         lines,
         plan.missing_configuration_exclusions,
         header="Configured exclusions not found in workspace:",
-        formatter=lambda name: name,
     )
 
     return "\n".join(lines)
