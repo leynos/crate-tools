@@ -97,10 +97,6 @@ def test_plan_publication_filtering(
         crate.name for crate in plan.skipped_configuration
     )
 
-    assert len(plan.publishable) == len(expected["publishable"])
-    assert len(plan.skipped_manifest) == len(expected["manifest"])
-    assert len(plan.skipped_configuration) == len(expected["configuration"])
-
     assert actual_publishable_names == expected["publishable"]
     assert actual_manifest_names == expected["manifest"]
     assert actual_configuration_names == expected["configuration"]
@@ -192,15 +188,15 @@ def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
 def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
     """All configuration exclusions appear in the skipped configuration list."""
     root = tmp_path.resolve()
-    first = _make_crate(root, "gamma")
-    second = _make_crate(root, "delta")
-    workspace = _make_workspace(root, first, second)
+    gamma = _make_crate(root, "gamma")
+    delta = _make_crate(root, "delta")
+    workspace = _make_workspace(root, gamma, delta)
     configuration = _make_config(exclude=("delta", "gamma"))
 
     plan = publish.plan_publication(workspace, configuration)
 
     assert plan.publishable == ()
-    assert plan.skipped_configuration == (second, first)
+    assert plan.skipped_configuration == (delta, gamma)
 
 
 def test_run_normalises_workspace_root(

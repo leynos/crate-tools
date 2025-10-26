@@ -102,7 +102,21 @@ def _format_crates_section(
     header: str,
     empty_message: str | None = None,
 ) -> None:
-    """Append a section describing publishable crates."""
+    """Append publishable crate details to ``lines``.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    crates : tuple[WorkspaceCrate, ...]
+        Publishable crates that should be listed with name and version.
+    header : str
+        Section header to prepend when publishable crates are present.
+    empty_message : str | None, optional
+        Message appended when ``crates`` is empty. When ``None`` (the
+        default), the section contributes no lines.
+
+    """
     if crates:
         lines.append(header)
         lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
@@ -116,7 +130,18 @@ def _format_skipped_section(
     *,
     header: str,
 ) -> None:
-    """Append a section describing skipped crates by name."""
+    """Append skipped crate names to ``lines``.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    crates : tuple[WorkspaceCrate, ...]
+        Crates that were skipped from publication.
+    header : str
+        Section header to prepend when skipped crates are present.
+
+    """
     if crates:
         lines.append(header)
         lines.extend(f"- {crate.name}" for crate in crates)
@@ -128,7 +153,18 @@ def _format_names_section(
     *,
     header: str,
 ) -> None:
-    """Append a section describing generic names."""
+    """Append generic name entries to ``lines``.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    names : tuple[str, ...]
+        Arbitrary string names to list under the section.
+    header : str
+        Section header to prepend when names are present.
+
+    """
     if names:
         lines.append(header)
         lines.extend(f"- {name}" for name in names)
