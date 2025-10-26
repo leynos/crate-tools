@@ -45,13 +45,14 @@ def when_invoke_lading_bump_dry_run(
 
 
 @then(parsers.parse('the bump command reports manifest updates for "{version}"'))
-def then_command_reports_workspace(cli_run: dict[str, typ.Any], version: str) -> None:
+def then_command_reports_workspace(
+    cli_run: dict[str, typ.Any], version: str
+) -> None:
     """Assert that the bump command reports the updated manifests."""
     assert cli_run["returncode"] == 0
     stdout = cli_run["stdout"]
     assert "Updated version to " in stdout
     assert version in stdout
-
 
 @then(parsers.parse('the bump command reports no manifest changes for "{version}"'))
 def then_command_reports_no_changes(
@@ -64,7 +65,6 @@ def then_command_reports_no_changes(
     assert "No manifest changes required" in stdout
     assert f"already {version}" in stdout
 
-
 @then(parsers.parse('the bump command reports a dry-run plan for "{version}"'))
 def then_command_reports_dry_run(
     cli_run: dict[str, typ.Any],
@@ -76,7 +76,6 @@ def then_command_reports_dry_run(
     assert "Dry run;" in stdout
     assert f"would update version to {version}" in stdout
 
-
 @then(
     parsers.parse('the bump command reports an invalid version error for "{version}"')
 )
@@ -87,7 +86,6 @@ def then_bump_reports_invalid_version(
     assert cli_run["returncode"] == 1
     stderr = cli_run["stderr"]
     assert f"Invalid version argument '{version}'" in stderr
-
 
 @then(parsers.parse('the CLI output lists manifest paths "{first}" and "{second}"'))
 def then_cli_output_lists_manifest_paths(
@@ -102,7 +100,6 @@ def then_cli_output_lists_manifest_paths(
     manifest_lines = [line for line in stdout_lines if line.startswith("- ")]
     assert manifest_lines == expected_lines
 
-
 @then(parsers.parse('the CLI output lists documentation path "{expected}"'))
 def then_cli_output_lists_documentation_path(
     cli_run: dict[str, typ.Any], expected: str
@@ -111,7 +108,6 @@ def then_cli_output_lists_documentation_path(
     assert cli_run["returncode"] == 0
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert expected in stdout_lines
-
 
 @then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))
 def then_documentation_contains(

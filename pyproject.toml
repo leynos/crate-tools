@@ -45,6 +45,9 @@ exclude = ["crate_tools/unittests", "**/unittests"]
 [tool.ruff]
 line-length = 88
 
+[tool.ruff.format]
+exclude = ["tests/bdd/steps/test_bump_steps.py"]
+
 [tool.ruff.lint]
 select = [
     "F",        # Pyflakes rules
