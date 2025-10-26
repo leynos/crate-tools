@@ -107,3 +107,10 @@ def then_publish_reports_missing_exclusion(
     section_index = lines.index("Configured exclusions not found in workspace:")
     missing = lines[section_index + 1 :]
     assert f"- {name}" in missing
+
+
+@then(parsers.parse('the publish command omits section "{header}"'))
+def then_publish_omits_section(cli_run: dict[str, typ.Any], header: str) -> None:
+    """Assert that the publish plan does not mention ``header``."""
+    lines = _publish_plan_lines(cli_run)
+    assert header not in lines

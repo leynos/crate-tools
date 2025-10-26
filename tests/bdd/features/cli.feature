@@ -79,6 +79,7 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command prints the publish plan for "alpha"
     And the publish command reports configuration-skipped crates "gamma, delta"
+    And the publish command omits section "Configured exclusions not found in workspace:"
 
   Scenario: Publish command reports no publishable crates
     Given a workspace directory with configuration

@@ -124,50 +124,31 @@ def _format_crates_section(
         lines.append(empty_message)
 
 
-def _format_skipped_section(
+def _append_section[T](
     lines: list[str],
-    crates: tuple[WorkspaceCrate, ...],
+    items: typ.Sequence[T],
     *,
     header: str,
+    formatter: typ.Callable[[T], str] = str,
 ) -> None:
-    """Append skipped crate names to ``lines``.
+    """Append formatted ``items`` to ``lines`` when a section has content.
 
     Parameters
     ----------
     lines : list[str]
         Mutable buffer that collects the formatted plan output lines.
-    crates : tuple[WorkspaceCrate, ...]
-        Crates that were skipped from publication.
+    items : Sequence[T]
+        Items that should be included in the formatted section.
     header : str
-        Section header to prepend when skipped crates are present.
+        Section header to prepend when ``items`` are present.
+    formatter : Callable[[T], str], optional
+        Callable that formats each item into a string for display. Defaults to
+        :class:`str` to make simple string sequences ergonomic.
 
     """
-    if crates:
+    if items:
         lines.append(header)
-        lines.extend(f"- {crate.name}" for crate in crates)
-
-
-def _format_names_section(
-    lines: list[str],
-    names: tuple[str, ...],
-    *,
-    header: str,
-) -> None:
-    """Append generic name entries to ``lines``.
-
-    Parameters
-    ----------
-    lines : list[str]
-        Mutable buffer that collects the formatted plan output lines.
-    names : tuple[str, ...]
-        Arbitrary string names to list under the section.
-    header : str
-        Section header to prepend when names are present.
-
-    """
-    if names:
-        lines.append(header)
-        lines.extend(f"- {name}" for name in names)
+        lines.extend(f"- {formatter(item)}" for item in items)
 
 
 def _format_plan(
@@ -185,17 +166,19 @@ def _format_plan(
         header=f"Crates to publish ({len(plan.publishable)}):",
         empty_message="Crates to publish: none",
     )
-    _format_skipped_section(
+    _append_section(
         lines,
         plan.skipped_manifest,
         header="Skipped (publish = false):",
+        formatter=lambda crate: crate.name,
     )
-    _format_skipped_section(
+    _append_section(
         lines,
         plan.skipped_configuration,
         header="Skipped via publish.exclude:",
+        formatter=lambda crate: crate.name,
     )
-    _format_names_section(
+    _append_section(
         lines,
         plan.missing_configuration_exclusions,
         header="Configured exclusions not found in workspace:",
