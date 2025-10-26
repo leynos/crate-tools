@@ -97,6 +97,10 @@ def test_plan_publication_filtering(
         crate.name for crate in plan.skipped_configuration
     )
 
+    assert len(plan.publishable) == len(expected["publishable"])
+    assert len(plan.skipped_manifest) == len(expected["manifest"])
+    assert len(plan.skipped_configuration) == len(expected["configuration"])
+
     assert actual_publishable_names == expected["publishable"]
     assert actual_manifest_names == expected["manifest"]
     assert actual_configuration_names == expected["configuration"]

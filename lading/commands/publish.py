@@ -14,8 +14,6 @@ if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
-T = typ.TypeVar("T")
-
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishPlan:
@@ -97,19 +95,43 @@ def plan_publication(
     )
 
 
-def _section_lines(
-    items: typ.Sequence[T],
+def _format_crates_section(
+    lines: list[str],
+    crates: tuple[WorkspaceCrate, ...],
     *,
     header: str,
-    formatter: typ.Callable[[T], str],
     empty_message: str | None = None,
-) -> list[str]:
-    """Return formatted lines describing ``items``."""
-    if items:
-        return [header, *map(formatter, items)]
-    if empty_message:
-        return [empty_message]
-    return []
+) -> None:
+    """Append a section describing publishable crates."""
+    if crates:
+        lines.append(header)
+        lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
+    elif empty_message is not None:
+        lines.append(empty_message)
+
+
+def _format_skipped_section(
+    lines: list[str],
+    crates: tuple[WorkspaceCrate, ...],
+    *,
+    header: str,
+) -> None:
+    """Append a section describing skipped crates by name."""
+    if crates:
+        lines.append(header)
+        lines.extend(f"- {crate.name}" for crate in crates)
+
+
+def _format_names_section(
+    lines: list[str],
+    names: tuple[str, ...],
+    *,
+    header: str,
+) -> None:
+    """Append a section describing generic names."""
+    if names:
+        lines.append(header)
+        lines.extend(f"- {name}" for name in names)
 
 
 def _format_plan(
@@ -121,37 +143,26 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    lines.extend(
-        _section_lines(
-            plan.publishable,
-            header=f"Crates to publish ({len(plan.publishable)}):",
-            formatter=lambda crate: f"- {crate.name} @ {crate.version}",
-            empty_message="Crates to publish: none",
-        )
+    _format_crates_section(
+        lines,
+        plan.publishable,
+        header=f"Crates to publish ({len(plan.publishable)}):",
+        empty_message="Crates to publish: none",
     )
-
-    lines.extend(
-        _section_lines(
-            plan.skipped_manifest,
-            header="Skipped (publish = false):",
-            formatter=lambda crate: f"- {crate.name}",
-        )
+    _format_skipped_section(
+        lines,
+        plan.skipped_manifest,
+        header="Skipped (publish = false):",
     )
-
-    lines.extend(
-        _section_lines(
-            plan.skipped_configuration,
-            header="Skipped via publish.exclude:",
-            formatter=lambda crate: f"- {crate.name}",
-        )
+    _format_skipped_section(
+        lines,
+        plan.skipped_configuration,
+        header="Skipped via publish.exclude:",
     )
-
-    lines.extend(
-        _section_lines(
-            plan.missing_configuration_exclusions,
-            header="Configured exclusions not found in workspace:",
-            formatter=lambda name: f"- {name}",
-        )
+    _format_names_section(
+        lines,
+        plan.missing_configuration_exclusions,
+        header="Configured exclusions not found in workspace:",
     )
 
     return "\n".join(lines)
