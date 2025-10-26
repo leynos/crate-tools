@@ -174,6 +174,72 @@ def given_cargo_metadata_sample(
     )
 
 
+@given("cargo metadata describes a workspace with a publish dependency cycle")
+def given_cargo_metadata_with_dependency_cycle(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> None:
+    """Stub metadata for crates that form a dependency cycle."""
+    install_cargo_stub(cmd_mox, monkeypatch)
+
+    alpha_manifest = _create_test_crate(
+        workspace_directory,
+        "alpha",
+        "0.1.0",
+        dependencies_toml="""
+            [dependencies]
+            beta = { version = "0.1.0", path = "../beta" }
+        """,
+    )
+    beta_manifest = _create_test_crate(
+        workspace_directory,
+        "beta",
+        "0.1.0",
+        dependencies_toml="""
+            [dependencies]
+            alpha = { version = "0.1.0", path = "../alpha" }
+        """,
+    )
+
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    workspace_manifest.write_text(
+        textwrap.dedent(
+            """
+            [workspace]
+            members = ["crates/alpha", "crates/beta"]
+
+            [workspace.package]
+            version = "0.1.0"
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": [
+            _build_package_metadata(
+                "alpha",
+                alpha_manifest,
+                dependencies=[{"name": "beta", "package": "beta-id"}],
+            ),
+            _build_package_metadata(
+                "beta",
+                beta_manifest,
+                dependencies=[{"name": "alpha", "package": "alpha-id"}],
+            ),
+        ],
+        "workspace_members": ["alpha-id", "beta-id"],
+    }
+
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+        stderr="",
+    )
+
+
 @given(
     parsers.parse(
         'the workspace README contains a TOML dependency snippet for "{crate_name}"'

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import heapq
 import typing as typ
 from collections import abc as cabc
+from collections import defaultdict
 from pathlib import Path
 
 import msgspec
@@ -17,6 +19,19 @@ ALLOWED_DEP_KINDS: typ.Final[set[str]] = {"normal", "dev", "build"}
 
 class WorkspaceModelError(RuntimeError):
     """Raised when the workspace model cannot be constructed."""
+
+
+class WorkspaceDependencyCycleError(WorkspaceModelError):
+    """Raised when a dependency cycle prevents ordering workspace crates."""
+
+    def __init__(self, cycle_nodes: cabc.Sequence[str]) -> None:
+        """Initialise the cycle error with sorted node names."""
+        self.cycle_nodes = tuple(sorted(cycle_nodes))
+        message = "Workspace dependency graph contains a cycle"
+        if self.cycle_nodes:
+            joined = ", ".join(self.cycle_nodes)
+            message = f"{message}: {joined}"
+        super().__init__(message)
 
 
 class WorkspaceDependency(msgspec.Struct, frozen=True, kw_only=True):
@@ -46,6 +61,54 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
 
     workspace_root: Path
     crates: tuple[WorkspaceCrate, ...]
+
+    def topologically_sorted_crates(self) -> tuple[WorkspaceCrate, ...]:
+        """Return ``self.crates`` ordered so dependencies precede dependents."""
+        crates_by_name = {crate.name: crate for crate in self.crates}
+        dependency_map: dict[str, tuple[str, ...]] = {}
+        for crate in crates_by_name.values():
+            dependency_names = {
+                dependency.name
+                for dependency in crate.dependencies
+                if dependency.name in crates_by_name
+            }
+            dependency_map[crate.name] = tuple(sorted(dependency_names))
+
+        incoming_counts: dict[str, int] = {}
+        dependents: defaultdict[str, set[str]] = defaultdict(set)
+        for name, dependencies in dependency_map.items():
+            incoming_counts[name] = len(dependencies)
+            for dependency_name in dependencies:
+                dependents[dependency_name].add(name)
+        for name in dependency_map:
+            dependents.setdefault(name, set())
+
+        available = [name for name, count in incoming_counts.items() if count == 0]
+        heapq.heapify(available)
+        ordered_names: list[str] = []
+
+        while available:
+            current = heapq.heappop(available)
+            ordered_names.append(current)
+            for dependent in dependents[current]:
+                incoming_counts[dependent] -= 1
+                if incoming_counts[dependent] == 0:
+                    heapq.heappush(available, dependent)
+
+        if len(ordered_names) != len(crates_by_name):
+            cycle_nodes = [
+                name
+                for name, count in incoming_counts.items()
+                if count > 0 and name not in ordered_names
+            ]
+            cycle_nodes.extend(
+                name
+                for name in crates_by_name
+                if name not in ordered_names and name not in cycle_nodes
+            )
+            raise WorkspaceDependencyCycleError(cycle_nodes)
+
+        return tuple(crates_by_name[name] for name in ordered_names)
 
     @property
     def crates_by_name(self) -> dict[str, WorkspaceCrate]:

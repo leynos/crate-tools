@@ -101,6 +101,21 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command lists crates in order "gamma, beta, alpha"
 
+  Scenario: Publish command rejects duplicate publish order entries
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency chain
+    And publish.order is "alpha, alpha"
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Duplicate publish.order entries: alpha"
+
+  Scenario: Publish command reports dependency cycles
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a publish dependency cycle
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Cannot determine publish order due to dependency cycle involving: alpha, beta"
+
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
     When I invoke lading bump 1.2.3 with that workspace

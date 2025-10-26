@@ -273,6 +273,19 @@ def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) ->
     assert "beta" in message
 
 
+def test_plan_publication_rejects_duplicate_configured_crates(tmp_path: Path) -> None:
+    """Repeated publish.order entries raise a duplicate configuration error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    workspace = _make_workspace(root, alpha)
+    configuration = _make_config(order=("alpha", "alpha"))
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    assert "Duplicate publish.order entries: alpha" in str(excinfo.value)
+
+
 def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> None:
     """Names outside the publishable set trigger an informative error."""
     root = tmp_path.resolve()
