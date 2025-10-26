@@ -14,8 +14,6 @@ if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
-T = typ.TypeVar("T")
-
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishPlan:
@@ -97,19 +95,79 @@ def plan_publication(
     )
 
 
-def _format_section(
-    items: tuple[T, ...],
+def _format_crates_section(
+    lines: list[str],
+    crates: tuple[WorkspaceCrate, ...],
     *,
     header: str,
-    item_formatter: typ.Callable[[T], str],
-    empty_lines: tuple[str, ...] = (),
-) -> list[str]:
-    """Return ``header`` and formatted ``items`` when any are present."""
-    if not items:
-        return list(empty_lines)
+    empty_message: str | None = None,
+) -> None:
+    """Append publishable crate details to ``lines``.
 
-    formatted_items = [item_formatter(item) for item in items]
-    return [header, *formatted_items]
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    crates : tuple[WorkspaceCrate, ...]
+        Publishable crates that should be listed with name and version.
+    header : str
+        Section header to prepend when publishable crates are present.
+    empty_message : str | None, optional
+        Message appended when ``crates`` is empty. When ``None`` (the
+        default), the section contributes no lines.
+
+    """
+    if crates:
+        lines.append(header)
+        lines.extend(f"- {crate.name} @ {crate.version}" for crate in crates)
+    elif empty_message is not None:
+        lines.append(empty_message)
+
+
+def _format_skipped_section(
+    lines: list[str],
+    crates: tuple[WorkspaceCrate, ...],
+    *,
+    header: str,
+) -> None:
+    """Append skipped crate names to ``lines``.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    crates : tuple[WorkspaceCrate, ...]
+        Crates that were skipped from publication.
+    header : str
+        Section header to prepend when skipped crates are present.
+
+    """
+    if crates:
+        lines.append(header)
+        lines.extend(f"- {crate.name}" for crate in crates)
+
+
+def _format_names_section(
+    lines: list[str],
+    names: tuple[str, ...],
+    *,
+    header: str,
+) -> None:
+    """Append generic name entries to ``lines``.
+
+    Parameters
+    ----------
+    lines : list[str]
+        Mutable buffer that collects the formatted plan output lines.
+    names : tuple[str, ...]
+        Arbitrary string names to list under the section.
+    header : str
+        Section header to prepend when names are present.
+
+    """
+    if names:
+        lines.append(header)
+        lines.extend(f"- {name}" for name in names)
 
 
 def _format_plan(
@@ -121,34 +179,26 @@ def _format_plan(
         f"Strip patch strategy: {strip_patches}",
     ]
 
-    lines.extend(
-        _format_section(
-            plan.publishable,
-            header=f"Crates to publish ({len(plan.publishable)}):",
-            item_formatter=lambda crate: f"- {crate.name} @ {crate.version}",
-            empty_lines=("Crates to publish: none",),
-        )
+    _format_crates_section(
+        lines,
+        plan.publishable,
+        header=f"Crates to publish ({len(plan.publishable)}):",
+        empty_message="Crates to publish: none",
     )
-    lines.extend(
-        _format_section(
-            plan.skipped_manifest,
-            header="Skipped (publish = false):",
-            item_formatter=lambda crate: f"- {crate.name}",
-        )
+    _format_skipped_section(
+        lines,
+        plan.skipped_manifest,
+        header="Skipped (publish = false):",
     )
-    lines.extend(
-        _format_section(
-            plan.skipped_configuration,
-            header="Skipped via publish.exclude:",
-            item_formatter=lambda crate: f"- {crate.name}",
-        )
+    _format_skipped_section(
+        lines,
+        plan.skipped_configuration,
+        header="Skipped via publish.exclude:",
     )
-    lines.extend(
-        _format_section(
-            plan.missing_configuration_exclusions,
-            header="Configured exclusions not found in workspace:",
-            item_formatter=lambda name: f"- {name}",
-        )
+    _format_names_section(
+        lines,
+        plan.missing_configuration_exclusions,
+        header="Configured exclusions not found in workspace:",
     )
 
     return "\n".join(lines)
@@ -157,7 +207,7 @@ def _format_plan(
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
-    """Return active configuration, loading it if necessary."""
+    """Return the active configuration, loading it from disk when required."""
     if configuration is not None:
         return configuration
 
@@ -170,7 +220,7 @@ def _ensure_configuration(
 def _ensure_workspace(
     workspace: WorkspaceGraph | None, workspace_root: Path
 ) -> WorkspaceGraph:
-    """Return workspace graph, loading it if necessary."""
+    """Return the workspace graph rooted at ``workspace_root``."""
     if workspace is not None:
         return workspace
 
@@ -178,7 +228,7 @@ def _ensure_workspace(
 
     try:
         return load_workspace(workspace_root)
-    except FileNotFoundError as exc:
+    except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
 
@@ -190,6 +240,7 @@ def run(
 ) -> str:
     """Plan crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
+
     active_configuration = _ensure_configuration(configuration, root_path)
     active_workspace = _ensure_workspace(workspace, root_path)
 

@@ -45,22 +45,61 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
 
 
-def test_plan_publication_filters_manifest_and_configuration(tmp_path: Path) -> None:
-    """Crates are filtered when publish=false or listed in publish.exclude."""
+@pytest.mark.parametrize(
+    (
+        "crate_specs",
+        "exclude",
+        "expected",
+    ),
+    [
+        pytest.param(
+            [("alpha", True), ("beta", False), ("gamma", True)],
+            ["gamma"],
+            {
+                "publishable": ("alpha",),
+                "manifest": ("beta",),
+                "configuration": ("gamma",),
+            },
+            id="filters_manifest_and_configuration",
+        ),
+        pytest.param(
+            [("alpha", False), ("beta", False)],
+            [],
+            {
+                "publishable": (),
+                "manifest": ("alpha", "beta"),
+                "configuration": (),
+            },
+            id="handles_no_publishable_crates",
+        ),
+    ],
+)
+def test_plan_publication_filtering(
+    tmp_path: Path,
+    crate_specs: list[tuple[str, bool]],
+    exclude: list[str],
+    expected: dict[str, tuple[str, ...]],
+) -> None:
+    """Planner splits crates into publishable and skipped groups."""
     root = tmp_path.resolve()
-    publishable = _make_crate(root, "alpha")
-    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
-    configuration_skipped = _make_crate(root, "gamma")
-    workspace = _make_workspace(
-        root, publishable, manifest_skipped, configuration_skipped
-    )
-    configuration = _make_config(exclude=("gamma",))
+    crates = [
+        _make_crate(root, name, publish_flag=publish_flag)
+        for name, publish_flag in crate_specs
+    ]
+    workspace = _make_workspace(root, *crates)
+    configuration = _make_config(exclude=tuple(exclude))
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.publishable == (publishable,)
-    assert plan.skipped_manifest == (manifest_skipped,)
-    assert plan.skipped_configuration == (configuration_skipped,)
+    actual_publishable_names = tuple(crate.name for crate in plan.publishable)
+    actual_manifest_names = tuple(crate.name for crate in plan.skipped_manifest)
+    actual_configuration_names = tuple(
+        crate.name for crate in plan.skipped_configuration
+    )
+
+    assert actual_publishable_names == expected["publishable"]
+    assert actual_manifest_names == expected["manifest"]
+    assert actual_configuration_names == expected["configuration"]
 
 
 def test_plan_publication_empty_workspace(tmp_path: Path) -> None:
@@ -146,6 +185,20 @@ def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
     assert plan.skipped_configuration == (config_skipped_early, config_skipped_late)
 
 
+def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
+    """All configuration exclusions appear in the skipped configuration list."""
+    root = tmp_path.resolve()
+    gamma = _make_crate(root, "gamma")
+    delta = _make_crate(root, "delta")
+    workspace = _make_workspace(root, gamma, delta)
+    configuration = _make_config(exclude=("delta", "gamma"))
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == ()
+    assert plan.skipped_configuration == (delta, gamma)
+
+
 def test_run_normalises_workspace_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -229,6 +282,28 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     assert "- gamma" in lines
     assert "Configured exclusions not found in workspace:" in lines
     assert "- missing" in lines
+
+
+def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
+    """``run`` highlights when no crates are eligible for publication."""
+    root = tmp_path.resolve()
+    manifest_skipped = _make_crate(root, "alpha", publish_flag=False)
+    config_skipped_first = _make_crate(root, "beta")
+    config_skipped_second = _make_crate(root, "gamma")
+    workspace = _make_workspace(
+        root, manifest_skipped, config_skipped_first, config_skipped_second
+    )
+    configuration = _make_config(exclude=("beta", "gamma"))
+
+    message = publish.run(root, configuration, workspace)
+
+    lines = message.splitlines()
+    assert "Crates to publish: none" in lines
+    assert "Skipped (publish = false):" in lines
+    assert "- alpha" in lines
+    assert "Skipped via publish.exclude:" in lines
+    assert "- beta" in lines
+    assert "- gamma" in lines
 
 
 def test_run_surfaces_missing_workspace(

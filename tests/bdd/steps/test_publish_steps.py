@@ -36,6 +36,14 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     assert f"- {crate_name} @ 0.1.0" in lines
 
 
+@then("the publish command reports that no crates are publishable")
+def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
+    """Assert that the publish command highlights the empty publish list."""
+    assert cli_run["returncode"] == 0
+    lines = _publish_plan_lines(cli_run)
+    assert "Crates to publish: none" in lines
+
+
 def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
@@ -69,6 +77,24 @@ def then_publish_reports_configuration_skip(
     section_index = lines.index("Skipped via publish.exclude:")
     skipped = lines[section_index + 1 :]
     assert f"- {crate_name}" in skipped
+
+
+@then(
+    parsers.parse(
+        'the publish command reports configuration-skipped crates "{crate_names}"'
+    )
+)
+def then_publish_reports_multiple_configuration_skips(
+    cli_run: dict[str, typ.Any], crate_names: str
+) -> None:
+    """Assert the publish plan lists all configuration exclusions."""
+    expected_names = [name.strip() for name in crate_names.split(",") if name.strip()]
+    lines = _publish_plan_lines(cli_run)
+    assert "Skipped via publish.exclude:" in lines
+    section_index = lines.index("Skipped via publish.exclude:")
+    skipped = lines[section_index + 1 :]
+    for name in expected_names:
+        assert f"- {name}" in skipped
 
 
 @then(parsers.parse('the publish command reports missing exclusion "{name}"'))

@@ -20,8 +20,7 @@ Feature: Lading CLI scaffolding
   Scenario: Bumping with an invalid version fails fast
     Given a workspace directory with configuration
     When I invoke lading bump 1.2 with that workspace
-    Then the CLI exits with code 1
-    And the stderr contains "Invalid version argument '1.2'"
+    Then the bump command reports an invalid version error for "1.2"
 
   Scenario: Bumping workspace versions skips excluded crates
     Given a workspace directory with configuration
@@ -71,6 +70,23 @@ Feature: Lading CLI scaffolding
     And the publish command reports manifest-skipped crate "beta"
     And the publish command reports configuration-skipped crate "gamma"
     And the publish command reports missing exclusion "missing-delta"
+
+  Scenario: Publish command lists multiple configuration skipped crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with publish filtering cases
+    And publish.exclude contains "gamma"
+    And publish.exclude contains "delta"
+    When I invoke lading publish with that workspace
+    Then the publish command prints the publish plan for "alpha"
+    And the publish command reports configuration-skipped crates "gamma, delta"
+
+  Scenario: Publish command reports no publishable crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with no publishable crates
+    When I invoke lading publish with that workspace
+    Then the publish command reports that no crates are publishable
+    And the publish command reports manifest-skipped crate "alpha"
+    And the publish command reports manifest-skipped crate "beta"
 
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
