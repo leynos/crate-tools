@@ -56,32 +56,61 @@ def _categorize_crates(
     return publishable, skipped_manifest, skipped_configuration
 
 
-def _resolve_configured_order(
-    publishable_by_name: dict[str, WorkspaceCrate],
+def _process_order_and_collect_errors(
     configured_order: typ.Sequence[str],
-) -> tuple[WorkspaceCrate, ...]:
-    """Validate and return crates ordered according to configuration."""
-    publishable_names = set(publishable_by_name)
-    seen: set[str] = set()
-    encountered: set[str] = set()
+    publishable_by_name: dict[str, WorkspaceCrate],
+) -> tuple[list[WorkspaceCrate], set[str], set[str], list[str]]:
+    """Collect ordering results and validation state for ``configured_order``.
+
+    The helper iterates the configured publish order once to gather the
+    resolved publishable crates alongside the bookkeeping needed for later
+    validation. Callers receive the ordered crates, all names that were seen,
+    the set of duplicate entries, and any references to unknown crates.
+    """
+    ordered_crates: list[WorkspaceCrate] = []
+    seen_names: set[str] = set()
+    encountered_names: set[str] = set()
     duplicates: set[str] = set()
-    unknown: list[str] = []
-    ordered_publishable_list: list[WorkspaceCrate] = []
+    unknown_names: list[str] = []
 
     for crate_name in configured_order:
         crate = publishable_by_name.get(crate_name)
         if crate is None:
-            unknown.append(crate_name)
+            unknown_names.append(crate_name)
             continue
-        if crate_name in encountered:
+        if crate_name in encountered_names:
             duplicates.add(crate_name)
         else:
-            encountered.add(crate_name)
-        if crate_name not in seen:
-            ordered_publishable_list.append(crate)
-        seen.add(crate_name)
+            encountered_names.add(crate_name)
+        if crate_name not in seen_names:
+            ordered_crates.append(crate)
+        seen_names.add(crate_name)
 
-    missing = sorted(name for name in publishable_names if name not in seen)
+    return ordered_crates, seen_names, duplicates, unknown_names
+
+
+def _build_order_validation_messages(
+    duplicates: typ.AbstractSet[str],
+    unknown: typ.Sequence[str],
+    missing: typ.Sequence[str],
+) -> list[str]:
+    """Render validation failure messages for publish order problems.
+
+    Parameters
+    ----------
+    duplicates : Collection[str]
+        Configured crate names that appeared more than once.
+    unknown : Sequence[str]
+        Configured crate names not present in the publishable set.
+    missing : Sequence[str]
+        Publishable crate names omitted from the configuration.
+
+    Returns
+    -------
+    list[str]
+        Formatted error messages matching the existing publish planner output.
+
+    """
     messages: list[str] = []
     if duplicates:
         duplicate_list = ", ".join(sorted(duplicates))
@@ -95,6 +124,26 @@ def _resolve_configured_order(
     if missing:
         missing_list = ", ".join(missing)
         messages.append(f"publish.order omits publishable crate(s): {missing_list}")
+    return messages
+
+
+def _resolve_configured_order(
+    publishable_by_name: dict[str, WorkspaceCrate],
+    configured_order: typ.Sequence[str],
+) -> tuple[WorkspaceCrate, ...]:
+    """Validate and return crates ordered according to configuration."""
+    publishable_names = set(publishable_by_name)
+    (
+        ordered_publishable_list,
+        seen_names,
+        duplicates,
+        unknown,
+    ) = _process_order_and_collect_errors(
+        configured_order,
+        publishable_by_name,
+    )
+    missing = sorted(name for name in publishable_names if name not in seen_names)
+    messages = _build_order_validation_messages(duplicates, unknown, missing)
     if messages:
         raise PublishPlanError("; ".join(messages))
     return tuple(ordered_publishable_list)
