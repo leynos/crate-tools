@@ -334,6 +334,30 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
     assert plan.publishable == (alpha,)
 
 
+def test_plan_publication_configuration_skips_ignore_cycles(tmp_path: Path) -> None:
+    """Configuration exclusions bypass cycles outside publishable crates."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    cycle_a = _make_crate(
+        root,
+        "cycle-a",
+        dependencies=(_make_dependency("cycle-b"),),
+    )
+    cycle_b = _make_crate(
+        root,
+        "cycle-b",
+        dependencies=(_make_dependency("cycle-a"),),
+    )
+
+    plan = _plan_with_crates(
+        tmp_path,
+        (alpha, cycle_a, cycle_b),
+        exclude=("cycle-a", "cycle-b"),
+    )
+
+    assert plan.publishable == (alpha,)
+
+
 def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
     alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
