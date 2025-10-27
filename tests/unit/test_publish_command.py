@@ -229,6 +229,34 @@ def test_plan_publication_topologically_orders_dependencies(tmp_path: Path) -> N
     assert plan.publishable == (alpha, beta, gamma)
 
 
+def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
+    """Dev-only dependency edges do not create publish-order cycles."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(
+        root,
+        "alpha",
+        dependencies=(
+            WorkspaceDependency(
+                package_id="beta-id",
+                name="beta",
+                manifest_name="beta",
+                kind="dev",
+            ),
+        ),
+    )
+    beta = _make_crate(
+        root,
+        "beta",
+        dependencies=(_make_dependency("alpha"),),
+    )
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config()
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (alpha, beta)
+
+
 def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
     """A dependency cycle raises an explicit planning error."""
     root = tmp_path.resolve()

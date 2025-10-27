@@ -101,6 +101,12 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command lists crates in order "gamma, beta, alpha"
 
+  Scenario: Publish command ignores dev dependency cycles
+    Given a workspace directory with configuration
+    And cargo metadata describes a workspace with a dev dependency cycle
+    When I invoke lading publish with that workspace
+    Then the publish command lists crates in order "alpha, beta"
+
   Scenario: Publish command rejects duplicate publish order entries
     Given a workspace directory with configuration
     And cargo metadata describes a workspace with a publish dependency chain

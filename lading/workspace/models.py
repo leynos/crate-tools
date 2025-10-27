@@ -15,6 +15,7 @@ from tomlkit.exceptions import TOMLKitError
 WORKSPACE_ROOT_MISSING_MSG = "cargo metadata missing 'workspace_root'"
 
 ALLOWED_DEP_KINDS: typ.Final[set[str]] = {"normal", "dev", "build"}
+ORDER_DEPENDENCY_KINDS: typ.Final[set[str]] = {"normal", "build"}
 
 
 class WorkspaceModelError(RuntimeError):
@@ -71,6 +72,9 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
                 dependency.name
                 for dependency in crate.dependencies
                 if dependency.name in crates_by_name
+                and (
+                    dependency.kind is None or dependency.kind in ORDER_DEPENDENCY_KINDS
+                )
             }
             dependency_map[crate.name] = tuple(sorted(dependency_names))
 
