@@ -18,6 +18,18 @@ ALLOWED_DEP_KINDS: typ.Final[set[str]] = {"normal", "dev", "build"}
 ORDER_DEPENDENCY_KINDS: typ.Final[set[str]] = {"normal", "build"}
 
 
+def _is_ordering_dependency(
+    dependency: WorkspaceDependency,
+    crates_by_name: dict[str, WorkspaceCrate],
+) -> bool:
+    """Return ``True`` when ``dependency`` influences publish ordering."""
+    if dependency.name not in crates_by_name:
+        return False
+    if dependency.kind is None:
+        return True
+    return dependency.kind in ORDER_DEPENDENCY_KINDS
+
+
 class WorkspaceModelError(RuntimeError):
     """Raised when the workspace model cannot be constructed."""
 
@@ -74,11 +86,7 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
                 sorted(
                     dependency.name
                     for dependency in crate.dependencies
-                    if dependency.name in crates_by_name
-                    and (
-                        dependency.kind is None
-                        or dependency.kind in ORDER_DEPENDENCY_KINDS
-                    )
+                    if _is_ordering_dependency(dependency, crates_by_name)
                 )
             )
             dependency_map[crate.name] = dependency_names
@@ -392,22 +400,40 @@ def _expect_string(value: object, field_name: str) -> str:
     raise WorkspaceModelError(message)
 
 
+def _is_non_empty_sequence(value: object) -> bool:
+    """Return ``True`` when ``value`` is a non-string sequence with content."""
+    if not isinstance(value, cabc.Sequence):
+        return False
+    if isinstance(value, str | bytes | bytearray):
+        return False
+    return bool(value)
+
+
 def _coerce_publish_setting(value: object, package_id: str) -> bool:
     """Return whether ``package_id`` should be considered publishable."""
     if value is None:
         return True
-    if value is False:
-        return False
-    if value is True:
-        return True
+    if isinstance(value, bool):
+        return value
     if isinstance(value, cabc.Sequence) and not isinstance(
         value, str | bytes | bytearray
     ):
-        return bool(tuple(value))
+        return _is_non_empty_sequence(value)
     message = (
         f"publish setting for package {package_id!r} must be false, a list, or null"
     )
     raise WorkspaceModelError(message)
+
+
+def _extract_readme_workspace_flag(package_table: object) -> bool:
+    """Return ``True`` when ``package_table`` opts into workspace readme."""
+    if not isinstance(package_table, cabc.Mapping):
+        return False
+    readme_value = package_table.get("readme")
+    if not isinstance(readme_value, cabc.Mapping):
+        return False
+    workspace_flag = readme_value.get("workspace")
+    return bool(workspace_flag)
 
 
 def _manifest_uses_workspace_readme(manifest_path: Path) -> bool:
@@ -423,10 +449,4 @@ def _manifest_uses_workspace_readme(manifest_path: Path) -> bool:
         message = f"failed to parse manifest {manifest_path}: {exc}"
         raise WorkspaceModelError(message) from exc
     package_table = document.get("package")
-    if not isinstance(package_table, cabc.Mapping):
-        return False
-    readme_value = package_table.get("readme")
-    if isinstance(readme_value, cabc.Mapping):
-        workspace_flag = readme_value.get("workspace")
-        return bool(workspace_flag)
-    return False
+    return _extract_readme_workspace_flag(package_table)
