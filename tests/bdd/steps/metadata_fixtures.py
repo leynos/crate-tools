@@ -21,6 +21,73 @@ if typ.TYPE_CHECKING:
     from cmd_mox import CmdMox
 
 
+def _write_workspace_manifest(
+    workspace_directory: Path,
+    members: typ.Sequence[str],
+    version: str = "0.1.0",
+) -> None:
+    """Write a minimal workspace manifest for behavioural test fixtures.
+
+    Parameters
+    ----------
+    workspace_directory:
+        Root directory that will contain the ``Cargo.toml`` workspace manifest.
+    members:
+        Relative paths of the workspace members to include in the manifest.
+    version:
+        Workspace package version to record in the manifest. Defaults to
+        ``"0.1.0"`` to align with the common test fixtures.
+
+    """
+    workspace_manifest = workspace_directory / "Cargo.toml"
+    members_literal = ", ".join(f'"{member}"' for member in members)
+    manifest_text = textwrap.dedent(
+        f"""
+        [workspace]
+        members = [{members_literal}]
+
+        [workspace.package]
+        version = "{version}"
+        """
+    ).lstrip()
+    workspace_manifest.write_text(manifest_text, encoding="utf-8")
+
+
+def _mock_cargo_metadata(
+    cmd_mox: CmdMox,
+    workspace_directory: Path,
+    packages: typ.Sequence[dict[str, typ.Any]],
+    member_ids: typ.Sequence[str],
+) -> None:
+    """Register a ``cargo metadata`` stub response for behavioural tests.
+
+    Parameters
+    ----------
+    cmd_mox:
+        CmdMox instance used to mock command executions within the tests.
+    workspace_directory:
+        Root directory of the temporary workspace that ``cargo`` should
+        consider when producing metadata.
+    packages:
+        Sequence of package dictionaries to include in the mocked metadata
+        payload.
+    member_ids:
+        Identifiers of workspace members included in ``workspace_members`` of
+        the mocked payload.
+
+    """
+    payload = {
+        "workspace_root": str(workspace_directory),
+        "packages": list(packages),
+        "workspace_members": list(member_ids),
+    }
+    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
+        exit_code=0,
+        stdout=json.dumps(payload),
+        stderr="",
+    )
+
+
 @given("cargo metadata describes a sample workspace")
 def given_cargo_metadata_sample(
     cmd_mox: CmdMox,
@@ -32,19 +99,6 @@ def given_cargo_metadata_sample(
     crate_dir = workspace_directory / "crates" / "alpha"
     crate_dir.mkdir(parents=True)
     manifest_path = crate_dir / "Cargo.toml"
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            """
-            [workspace]
-            members = ["crates/alpha"]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
     manifest_path.write_text(
         """
         [package]
@@ -54,9 +108,11 @@ def given_cargo_metadata_sample(
         """,
         encoding="utf-8",
     )
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": [
+    _write_workspace_manifest(workspace_directory, ["crates/alpha"])
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=[
             {
                 "name": "alpha",
                 "version": "0.1.0",
@@ -66,12 +122,7 @@ def given_cargo_metadata_sample(
                 "publish": None,
             }
         ],
-        "workspace_members": ["alpha-id"],
-    }
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+        member_ids=["alpha-id"],
     )
 
 
@@ -102,53 +153,40 @@ def given_cargo_metadata_with_dev_dependency_cycle(
             alpha = { version = "0.1.0", path = "../alpha" }
         """,
     )
-
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            """
-            [workspace]
-            members = ["crates/alpha", "crates/beta"]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
+    _write_workspace_manifest(
+        workspace_directory,
+        ["crates/alpha", "crates/beta"],
     )
 
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": [
-            _build_package_metadata(
-                "alpha",
-                alpha_manifest,
-                dependencies=[
-                    {
-                        "name": "beta",
-                        "package": "beta-id",
-                        "kind": "dev",
-                    }
-                ],
-            ),
-            _build_package_metadata(
-                "beta",
-                beta_manifest,
-                dependencies=[
-                    {
-                        "name": "alpha",
-                        "package": "alpha-id",
-                    }
-                ],
-            ),
-        ],
-        "workspace_members": ["alpha-id", "beta-id"],
-    }
+    packages = [
+        _build_package_metadata(
+            "alpha",
+            alpha_manifest,
+            dependencies=[
+                {
+                    "name": "beta",
+                    "package": "beta-id",
+                    "kind": "dev",
+                }
+            ],
+        ),
+        _build_package_metadata(
+            "beta",
+            beta_manifest,
+            dependencies=[
+                {
+                    "name": "alpha",
+                    "package": "alpha-id",
+                }
+            ],
+        ),
+    ]
 
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=packages,
+        member_ids=["alpha-id", "beta-id"],
     )
 
 
@@ -179,42 +217,29 @@ def given_cargo_metadata_with_dependency_cycle(
             alpha = { version = "0.1.0", path = "../alpha" }
         """,
     )
-
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            """
-            [workspace]
-            members = ["crates/alpha", "crates/beta"]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
+    _write_workspace_manifest(
+        workspace_directory,
+        ["crates/alpha", "crates/beta"],
     )
 
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": [
-            _build_package_metadata(
-                "alpha",
-                alpha_manifest,
-                dependencies=[{"name": "beta", "package": "beta-id"}],
-            ),
-            _build_package_metadata(
-                "beta",
-                beta_manifest,
-                dependencies=[{"name": "alpha", "package": "alpha-id"}],
-            ),
-        ],
-        "workspace_members": ["alpha-id", "beta-id"],
-    }
+    packages = [
+        _build_package_metadata(
+            "alpha",
+            alpha_manifest,
+            dependencies=[{"name": "beta", "package": "beta-id"}],
+        ),
+        _build_package_metadata(
+            "beta",
+            beta_manifest,
+            dependencies=[{"name": "alpha", "package": "alpha-id"}],
+        ),
+    ]
 
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=packages,
+        member_ids=["alpha-id", "beta-id"],
     )
 
 
@@ -257,29 +282,12 @@ def given_cargo_metadata_two_crates(
             }
         )
         members.append(f"crates/{name}")
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    members_literal = ", ".join(f'"{member}"' for member in members)
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            f"""
-            [workspace]
-            members = [{members_literal}]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": crate_entries,
-        "workspace_members": [f"{name}-id" for name in crate_names],
-    }
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    _write_workspace_manifest(workspace_directory, members)
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=crate_entries,
+        member_ids=[f"{name}-id" for name in crate_names],
     )
 
 
@@ -306,19 +314,9 @@ def given_cargo_metadata_with_internal_dependencies(
     beta_manifest = _create_test_crate(
         workspace_directory, "beta", "0.1.0", dependencies_toml=beta_dependencies
     )
-
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            """
-            [workspace]
-            members = ["crates/alpha", "crates/beta"]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
+    _write_workspace_manifest(
+        workspace_directory,
+        ["crates/alpha", "crates/beta"],
     )
 
     beta_dependency_entries = [
@@ -326,20 +324,17 @@ def given_cargo_metadata_with_internal_dependencies(
         {"name": "alpha", "package": "alpha-id", "kind": "dev"},
         {"name": "alpha", "package": "alpha-id", "kind": "build"},
     ]
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": [
-            _build_package_metadata("alpha", alpha_manifest),
-            _build_package_metadata(
-                "beta", beta_manifest, dependencies=beta_dependency_entries
-            ),
-        ],
-        "workspace_members": ["alpha-id", "beta-id"],
-    }
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    packages = [
+        _build_package_metadata("alpha", alpha_manifest),
+        _build_package_metadata(
+            "beta", beta_manifest, dependencies=beta_dependency_entries
+        ),
+    ]
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=packages,
+        member_ids=["alpha-id", "beta-id"],
     )
 
 
@@ -376,29 +371,12 @@ def _install_publish_filter_metadata(
         )
         member_entries.append(f"crates/{name}")
 
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    members_literal = ", ".join(f'"{member}"' for member in member_entries)
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            f"""
-            [workspace]
-            members = [{members_literal}]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
-    )
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": packages,
-        "workspace_members": [f"{name}-id" for name, _ in crate_specs],
-    }
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    _write_workspace_manifest(workspace_directory, member_entries)
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=packages,
+        member_ids=[f"{name}-id" for name, _ in crate_specs],
     )
 
 
@@ -468,41 +446,28 @@ def given_cargo_metadata_with_dependency_chain(
             beta = { version = "0.1.0", path = "../beta" }
         """,
     )
-
-    workspace_manifest = workspace_directory / "Cargo.toml"
-    workspace_manifest.write_text(
-        textwrap.dedent(
-            """
-            [workspace]
-            members = ["crates/alpha", "crates/beta", "crates/gamma"]
-
-            [workspace.package]
-            version = "0.1.0"
-            """
-        ).lstrip(),
-        encoding="utf-8",
+    _write_workspace_manifest(
+        workspace_directory,
+        ["crates/alpha", "crates/beta", "crates/gamma"],
     )
 
-    payload = {
-        "workspace_root": str(workspace_directory),
-        "packages": [
-            _build_package_metadata("alpha", alpha_manifest),
-            _build_package_metadata(
-                "beta",
-                beta_manifest,
-                dependencies=[{"name": "alpha", "package": "alpha-id"}],
-            ),
-            _build_package_metadata(
-                "gamma",
-                gamma_manifest,
-                dependencies=[{"name": "beta", "package": "beta-id"}],
-            ),
-        ],
-        "workspace_members": ["alpha-id", "beta-id", "gamma-id"],
-    }
+    packages = [
+        _build_package_metadata("alpha", alpha_manifest),
+        _build_package_metadata(
+            "beta",
+            beta_manifest,
+            dependencies=[{"name": "alpha", "package": "alpha-id"}],
+        ),
+        _build_package_metadata(
+            "gamma",
+            gamma_manifest,
+            dependencies=[{"name": "beta", "package": "beta-id"}],
+        ),
+    ]
 
-    cmd_mox.mock("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(payload),
-        stderr="",
+    _mock_cargo_metadata(
+        cmd_mox,
+        workspace_directory,
+        packages=packages,
+        member_ids=["alpha-id", "beta-id", "gamma-id"],
     )
