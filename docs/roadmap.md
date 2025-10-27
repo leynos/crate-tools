@@ -161,7 +161,7 @@ occur.
   - **Completion Criteria:** The logic correctly filters out crates with
     `publish = false` and those listed in the `publish.exclude` configuration.
 
-- [ ] **Implement Topological Sort for Publish Order:**
+- [x] **Implement Topological Sort for Publish Order:**
 
   - **Outcome:** The command can generate a valid publication order based on
     the workspace dependency graph.

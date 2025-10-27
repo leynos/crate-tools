@@ -10,6 +10,7 @@ from .metadata import (
 from .models import (
     WorkspaceCrate,
     WorkspaceDependency,
+    WorkspaceDependencyCycleError,
     WorkspaceGraph,
     WorkspaceModelError,
     build_workspace_graph,
@@ -21,6 +22,7 @@ __all__ = [
     "CargoMetadataError",
     "WorkspaceCrate",
     "WorkspaceDependency",
+    "WorkspaceDependencyCycleError",
     "WorkspaceGraph",
     "WorkspaceModelError",
     "build_workspace_graph",

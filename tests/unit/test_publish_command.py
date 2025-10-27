@@ -8,7 +8,12 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate, WorkspaceGraph, WorkspaceModelError
+from lading.workspace import (
+    WorkspaceCrate,
+    WorkspaceDependency,
+    WorkspaceGraph,
+    WorkspaceModelError,
+)
 
 
 def _make_config(**overrides: object) -> config_module.LadingConfig:
@@ -22,6 +27,7 @@ def _make_crate(
     name: str,
     *,
     publish_flag: bool = True,
+    dependencies: tuple[WorkspaceDependency, ...] | None = None,
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``."""
     crate_root = root / name
@@ -34,7 +40,7 @@ def _make_crate(
         root_path=crate_root,
         publish=publish_flag,
         readme_is_workspace=False,
-        dependencies=(),
+        dependencies=() if dependencies is None else dependencies,
     )
 
 
@@ -43,6 +49,60 @@ def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
     if not crates:
         crates = (_make_crate(root, "alpha"),)
     return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
+
+
+def _make_dependency(name: str) -> WorkspaceDependency:
+    """Return a workspace dependency pointing at the crate named ``name``."""
+    return WorkspaceDependency(
+        package_id=f"{name}-id",
+        name=name,
+        manifest_name=name,
+        kind=None,
+    )
+
+
+def _make_dependency_chain(
+    root: Path,
+) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
+    """Return crates that form a simple alpha→beta→gamma dependency chain.
+
+    ``alpha`` has no dependencies, ``beta`` depends on ``alpha``, and
+    ``gamma`` depends on ``beta``. Tests reuse this helper to ensure they all
+    operate on the same structure without duplicating setup code.
+    """
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
+    return alpha, beta, gamma
+
+
+def _plan_with_crates(
+    tmp_path: Path,
+    crates: tuple[WorkspaceCrate, ...],
+    **config_overrides: object,
+) -> publish.PublishPlan:
+    """Plan publication for ``crates`` using ``tmp_path`` as the workspace root.
+
+    Parameters
+    ----------
+    tmp_path:
+        Pytest-provided temporary directory that defines the workspace root.
+    crates:
+        The workspace crates to include when constructing the plan.
+    **config_overrides:
+        Keyword arguments forwarded to :func:`_make_config` to customise the
+        planner configuration.
+
+    Returns
+    -------
+    publish.PublishPlan
+        The resulting plan from :func:`publish.plan_publication`.
+
+    """
+    root = tmp_path.resolve()
+    workspace = _make_workspace(root, *crates)
+    configuration = _make_config(**config_overrides)
+    return publish.plan_publication(workspace, configuration)
 
 
 @pytest.mark.parametrize(
@@ -197,6 +257,156 @@ def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
 
     assert plan.publishable == ()
     assert plan.skipped_configuration == (delta, gamma)
+
+
+def test_plan_publication_topologically_orders_dependencies(tmp_path: Path) -> None:
+    """Crates are sorted so that dependencies publish before their dependents."""
+    alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
+
+    plan = _plan_with_crates(tmp_path, (gamma, beta, alpha))
+
+    assert plan.publishable == (alpha, beta, gamma)
+
+
+def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
+    """Dev-only dependency edges do not create publish-order cycles."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(
+        root,
+        "alpha",
+        dependencies=(
+            WorkspaceDependency(
+                package_id="beta-id",
+                name="beta",
+                manifest_name="beta",
+                kind="dev",
+            ),
+        ),
+    )
+    beta = _make_crate(
+        root,
+        "beta",
+        dependencies=(_make_dependency("alpha"),),
+    )
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config()
+
+    plan = publish.plan_publication(workspace, configuration)
+
+    assert plan.publishable == (alpha, beta)
+
+
+def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
+    """A dependency cycle raises an explicit planning error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha", dependencies=(_make_dependency("beta"),))
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config()
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    assert "dependency cycle" in str(excinfo.value)
+
+
+def test_plan_publication_ignores_cycles_in_non_publishable_crates(
+    tmp_path: Path,
+) -> None:
+    """Cycles among skipped crates do not block eligible publishable crates."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    cycle_a = _make_crate(
+        root,
+        "cycle-a",
+        publish_flag=False,
+        dependencies=(_make_dependency("cycle-b"),),
+    )
+    cycle_b = _make_crate(
+        root,
+        "cycle-b",
+        publish_flag=False,
+        dependencies=(_make_dependency("cycle-a"),),
+    )
+
+    plan = _plan_with_crates(tmp_path, (alpha, cycle_a, cycle_b))
+
+    assert plan.publishable == (alpha,)
+
+
+def test_plan_publication_configuration_skips_ignore_cycles(tmp_path: Path) -> None:
+    """Configuration exclusions bypass cycles outside publishable crates."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    cycle_a = _make_crate(
+        root,
+        "cycle-a",
+        dependencies=(_make_dependency("cycle-b"),),
+    )
+    cycle_b = _make_crate(
+        root,
+        "cycle-b",
+        dependencies=(_make_dependency("cycle-a"),),
+    )
+
+    plan = _plan_with_crates(
+        tmp_path,
+        (alpha, cycle_a, cycle_b),
+        exclude=("cycle-a", "cycle-b"),
+    )
+
+    assert plan.publishable == (alpha,)
+
+
+def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
+    """Explicit publish.order values override the automatic dependency sort."""
+    alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
+
+    plan = _plan_with_crates(
+        tmp_path,
+        (alpha, beta, gamma),
+        order=("gamma", "beta", "alpha"),
+    )
+
+    assert plan.publishable == (gamma, beta, alpha)
+
+
+def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) -> None:
+    """Missing crates in publish.order surface a descriptive validation error."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta")
+    workspace = _make_workspace(root, alpha, beta)
+    configuration = _make_config(order=("alpha",))
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        publish.plan_publication(workspace, configuration)
+
+    message = str(excinfo.value)
+    assert "publish.order omits" in message
+    assert "beta" in message
+
+
+def test_plan_publication_rejects_duplicate_configured_crates(tmp_path: Path) -> None:
+    """Repeated publish.order entries raise a duplicate configuration error."""
+    alpha, _, _ = _make_dependency_chain(tmp_path.resolve())
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        _plan_with_crates(tmp_path, (alpha,), order=("alpha", "alpha"))
+
+    assert "Duplicate publish.order entries: alpha" in str(excinfo.value)
+
+
+def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> None:
+    """Names outside the publishable set trigger an informative error."""
+    alpha, _, _ = _make_dependency_chain(tmp_path.resolve())
+
+    with pytest.raises(publish.PublishPlanError) as excinfo:
+        _plan_with_crates(tmp_path, (alpha,), order=("alpha", "omega"))
+
+    assert "publish.order references crates outside the publishable set" in str(
+        excinfo.value
+    )
 
 
 def test_run_normalises_workspace_root(

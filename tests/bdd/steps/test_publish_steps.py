@@ -6,7 +6,9 @@ import typing as typ
 
 from pytest_bdd import parsers, then, when
 
-from . import fixtures as _fixtures  # noqa: F401
+from . import config_fixtures as _config_fixtures  # noqa: F401
+from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
+from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -34,6 +36,25 @@ def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> No
     assert lines[0] == f"Publish plan for {workspace}"
     assert "Strip patch strategy: all" in lines[1]
     assert f"- {crate_name} @ 0.1.0" in lines
+
+
+@then(parsers.parse('the publish command lists crates in order "{crate_names}"'))
+def then_publish_lists_crates_in_order(
+    cli_run: dict[str, typ.Any], crate_names: str
+) -> None:
+    """Assert that publishable crates appear in the expected order."""
+    expected = [name.strip() for name in crate_names.split(",") if name.strip()]
+    lines = _publish_plan_lines(cli_run)
+    header = f"Crates to publish ({len(expected)}):"
+    assert header in lines
+    section_index = lines.index(header)
+    publish_lines: list[str] = []
+    for line in lines[section_index + 1 :]:
+        if not line.startswith("- "):
+            break
+        publish_lines.append(line[2:])
+    actual = [entry.split(" @ ", 1)[0] for entry in publish_lines]
+    assert actual == expected
 
 
 @then("the publish command reports that no crates are publishable")

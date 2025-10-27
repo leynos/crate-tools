@@ -144,6 +144,14 @@ Crates to publish (1):
 - alpha @ 0.1.0
 ```
 
+The publish plan sorts crates so that internal dependencies appear before the
+crates that rely on them. The deterministic order is calculated with a
+topological sort over the workspace graph. If the workspace defines
+`publish.order` in `lading.toml`, that explicit list takes precedence once it is
+validated for missing, duplicate, or unknown crate names. Any dependency cycles
+are reported as errors so that release engineers can fix their manifests before
+continuing.
+
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
 reasons for skipping crates visible to the operator.
