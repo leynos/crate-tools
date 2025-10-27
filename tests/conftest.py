@@ -11,7 +11,9 @@ import pytest
 
 pytest_plugins = (
     "cmd_mox.pytest_plugin",
-    "tests.bdd.steps.fixtures",
+    "tests.bdd.steps.config_fixtures",
+    "tests.bdd.steps.manifest_fixtures",
+    "tests.bdd.steps.metadata_fixtures",
     "tests.bdd.steps.test_bump_steps",
     "tests.bdd.steps.test_publish_steps",
 )

@@ -6,7 +6,9 @@ import typing as typ
 
 from pytest_bdd import parsers, then, when
 
-from . import fixtures as _fixtures  # noqa: F401
+from . import config_fixtures as _config_fixtures  # noqa: F401
+from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
+from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
