@@ -61,6 +61,50 @@ def _make_dependency(name: str) -> WorkspaceDependency:
     )
 
 
+def _make_dependency_chain(
+    root: Path,
+) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
+    """Return crates that form a simple alpha→beta→gamma dependency chain.
+
+    ``alpha`` has no dependencies, ``beta`` depends on ``alpha``, and
+    ``gamma`` depends on ``beta``. Tests reuse this helper to ensure they all
+    operate on the same structure without duplicating setup code.
+    """
+    alpha = _make_crate(root, "alpha")
+    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
+    return alpha, beta, gamma
+
+
+def _plan_with_crates(
+    tmp_path: Path,
+    crates: tuple[WorkspaceCrate, ...],
+    **config_overrides: object,
+) -> publish.PublishPlan:
+    """Plan publication for ``crates`` using ``tmp_path`` as the workspace root.
+
+    Parameters
+    ----------
+    tmp_path:
+        Pytest-provided temporary directory that defines the workspace root.
+    crates:
+        The workspace crates to include when constructing the plan.
+    **config_overrides:
+        Keyword arguments forwarded to :func:`_make_config` to customise the
+        planner configuration.
+
+    Returns
+    -------
+    publish.PublishPlan
+        The resulting plan from :func:`publish.plan_publication`.
+
+    """
+    root = tmp_path.resolve()
+    workspace = _make_workspace(root, *crates)
+    configuration = _make_config(**config_overrides)
+    return publish.plan_publication(workspace, configuration)
+
+
 @pytest.mark.parametrize(
     (
         "crate_specs",
@@ -217,14 +261,9 @@ def test_plan_publication_multiple_configuration_skips(tmp_path: Path) -> None:
 
 def test_plan_publication_topologically_orders_dependencies(tmp_path: Path) -> None:
     """Crates are sorted so that dependencies publish before their dependents."""
-    root = tmp_path.resolve()
-    alpha = _make_crate(root, "alpha")
-    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
-    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
-    workspace = _make_workspace(root, gamma, beta, alpha)
-    configuration = _make_config()
+    alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
 
-    plan = publish.plan_publication(workspace, configuration)
+    plan = _plan_with_crates(tmp_path, (gamma, beta, alpha))
 
     assert plan.publishable == (alpha, beta, gamma)
 
@@ -273,14 +312,13 @@ def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
 
 def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
-    root = tmp_path.resolve()
-    alpha = _make_crate(root, "alpha")
-    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
-    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
-    workspace = _make_workspace(root, alpha, beta, gamma)
-    configuration = _make_config(order=("gamma", "beta", "alpha"))
+    alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
 
-    plan = publish.plan_publication(workspace, configuration)
+    plan = _plan_with_crates(
+        tmp_path,
+        (alpha, beta, gamma),
+        order=("gamma", "beta", "alpha"),
+    )
 
     assert plan.publishable == (gamma, beta, alpha)
 
@@ -303,26 +341,20 @@ def test_plan_publication_rejects_incomplete_configured_order(tmp_path: Path) ->
 
 def test_plan_publication_rejects_duplicate_configured_crates(tmp_path: Path) -> None:
     """Repeated publish.order entries raise a duplicate configuration error."""
-    root = tmp_path.resolve()
-    alpha = _make_crate(root, "alpha")
-    workspace = _make_workspace(root, alpha)
-    configuration = _make_config(order=("alpha", "alpha"))
+    alpha, _, _ = _make_dependency_chain(tmp_path.resolve())
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
-        publish.plan_publication(workspace, configuration)
+        _plan_with_crates(tmp_path, (alpha,), order=("alpha", "alpha"))
 
     assert "Duplicate publish.order entries: alpha" in str(excinfo.value)
 
 
 def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> None:
     """Names outside the publishable set trigger an informative error."""
-    root = tmp_path.resolve()
-    alpha = _make_crate(root, "alpha")
-    workspace = _make_workspace(root, alpha)
-    configuration = _make_config(order=("alpha", "omega"))
+    alpha, _, _ = _make_dependency_chain(tmp_path.resolve())
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
-        publish.plan_publication(workspace, configuration)
+        _plan_with_crates(tmp_path, (alpha,), order=("alpha", "omega"))
 
     assert "publish.order references crates outside the publishable set" in str(
         excinfo.value
