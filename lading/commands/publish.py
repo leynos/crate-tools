@@ -68,8 +68,7 @@ def _process_order_and_collect_errors(
     the set of duplicate entries, and any references to unknown crates.
     """
     ordered_crates: list[WorkspaceCrate] = []
-    seen_names: set[str] = set()
-    encountered_names: set[str] = set()
+    seen: set[str] = set()
     duplicates: set[str] = set()
     unknown_names: list[str] = []
 
@@ -78,15 +77,13 @@ def _process_order_and_collect_errors(
         if crate is None:
             unknown_names.append(crate_name)
             continue
-        if crate_name in encountered_names:
+        if crate_name in seen:
             duplicates.add(crate_name)
         else:
-            encountered_names.add(crate_name)
-        if crate_name not in seen_names:
             ordered_crates.append(crate)
-        seen_names.add(crate_name)
+            seen.add(crate_name)
 
-    return ordered_crates, seen_names, duplicates, unknown_names
+    return ordered_crates, seen, duplicates, unknown_names
 
 
 def _build_order_validation_messages(
@@ -116,7 +113,7 @@ def _build_order_validation_messages(
         duplicate_list = ", ".join(sorted(duplicates))
         messages.append(f"Duplicate publish.order entries: {duplicate_list}")
     if unknown:
-        unknown_list = ", ".join(unknown)
+        unknown_list = ", ".join(sorted(unknown))
         messages.append(
             "publish.order references crates outside the publishable set: "
             f"{unknown_list}"
@@ -154,11 +151,14 @@ def _resolve_topological_order(
 ) -> tuple[WorkspaceCrate, ...]:
     """Return publishable crates ordered by workspace dependencies."""
     try:
-        return tuple(
-            crate
-            for crate in workspace.topologically_sorted_crates()
-            if crate.name in publishable_names
+        publishable_crates = tuple(
+            crate for crate in workspace.crates if crate.name in publishable_names
         )
+        subgraph = workspace.__class__(
+            workspace_root=workspace.workspace_root,
+            crates=publishable_crates,
+        )
+        return subgraph.topologically_sorted_crates()
     except WorkspaceDependencyCycleError as exc:
         cycle_list = ", ".join(exc.cycle_nodes)
         message = "Cannot determine publish order due to dependency cycle"

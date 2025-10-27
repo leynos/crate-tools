@@ -310,6 +310,30 @@ def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
     assert "dependency cycle" in str(excinfo.value)
 
 
+def test_plan_publication_ignores_cycles_in_non_publishable_crates(
+    tmp_path: Path,
+) -> None:
+    """Cycles among skipped crates do not block eligible publishable crates."""
+    root = tmp_path.resolve()
+    alpha = _make_crate(root, "alpha")
+    cycle_a = _make_crate(
+        root,
+        "cycle-a",
+        publish_flag=False,
+        dependencies=(_make_dependency("cycle-b"),),
+    )
+    cycle_b = _make_crate(
+        root,
+        "cycle-b",
+        publish_flag=False,
+        dependencies=(_make_dependency("cycle-a"),),
+    )
+
+    plan = _plan_with_crates(tmp_path, (alpha, cycle_a, cycle_b))
+
+    assert plan.publishable == (alpha,)
+
+
 def test_plan_publication_honours_configured_order(tmp_path: Path) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
     alpha, beta, gamma = _make_dependency_chain(tmp_path.resolve())
