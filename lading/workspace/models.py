@@ -63,21 +63,32 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
     workspace_root: Path
     crates: tuple[WorkspaceCrate, ...]
 
-    def topologically_sorted_crates(self) -> tuple[WorkspaceCrate, ...]:
-        """Return ``self.crates`` ordered so dependencies precede dependents."""
-        crates_by_name = {crate.name: crate for crate in self.crates}
+    def _build_dependency_graph(
+        self,
+        crates_by_name: dict[str, WorkspaceCrate],
+    ) -> dict[str, tuple[str, ...]]:
+        """Build a dependency map for workspace crates."""
         dependency_map: dict[str, tuple[str, ...]] = {}
         for crate in crates_by_name.values():
-            dependency_names = {
-                dependency.name
-                for dependency in crate.dependencies
-                if dependency.name in crates_by_name
-                and (
-                    dependency.kind is None or dependency.kind in ORDER_DEPENDENCY_KINDS
+            dependency_names = tuple(
+                sorted(
+                    dependency.name
+                    for dependency in crate.dependencies
+                    if dependency.name in crates_by_name
+                    and (
+                        dependency.kind is None
+                        or dependency.kind in ORDER_DEPENDENCY_KINDS
+                    )
                 )
-            }
-            dependency_map[crate.name] = tuple(sorted(dependency_names))
+            )
+            dependency_map[crate.name] = dependency_names
+        return dependency_map
 
+    def _initialize_topological_structures(
+        self,
+        dependency_map: dict[str, tuple[str, ...]],
+    ) -> tuple[dict[str, int], defaultdict[str, set[str]]]:
+        """Initialise incoming counts and dependents for topological sort."""
         incoming_counts: dict[str, int] = {}
         dependents: defaultdict[str, set[str]] = defaultdict(set)
         for name, dependencies in dependency_map.items():
@@ -86,7 +97,14 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
                 dependents[dependency_name].add(name)
         for name in dependency_map:
             dependents.setdefault(name, set())
+        return incoming_counts, dependents
 
+    def _perform_kahn_sort(
+        self,
+        incoming_counts: dict[str, int],
+        dependents: defaultdict[str, set[str]],
+    ) -> list[str]:
+        """Execute Kahn's algorithm to produce topological ordering."""
         available = [name for name, count in incoming_counts.items() if count == 0]
         heapq.heapify(available)
         ordered_names: list[str] = []
@@ -99,16 +117,41 @@ class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):
                 if incoming_counts[dependent] == 0:
                     heapq.heappush(available, dependent)
 
+        return ordered_names
+
+    def _collect_cycle_nodes(
+        self,
+        crates_by_name: dict[str, WorkspaceCrate],
+        ordered_names: list[str],
+        incoming_counts: dict[str, int],
+    ) -> list[str]:
+        """Identify nodes involved in a dependency cycle."""
+        cycle_nodes = [
+            name
+            for name, count in incoming_counts.items()
+            if count > 0 and name not in ordered_names
+        ]
+        cycle_nodes.extend(
+            name
+            for name in crates_by_name
+            if name not in ordered_names and name not in cycle_nodes
+        )
+        return cycle_nodes
+
+    def topologically_sorted_crates(self) -> tuple[WorkspaceCrate, ...]:
+        """Return ``self.crates`` ordered so dependencies precede dependents."""
+        crates_by_name = {crate.name: crate for crate in self.crates}
+        dependency_map = self._build_dependency_graph(crates_by_name)
+        incoming_counts, dependents = self._initialize_topological_structures(
+            dependency_map
+        )
+        ordered_names = self._perform_kahn_sort(incoming_counts, dependents)
+
         if len(ordered_names) != len(crates_by_name):
-            cycle_nodes = [
-                name
-                for name, count in incoming_counts.items()
-                if count > 0 and name not in ordered_names
-            ]
-            cycle_nodes.extend(
-                name
-                for name in crates_by_name
-                if name not in ordered_names and name not in cycle_nodes
+            cycle_nodes = self._collect_cycle_nodes(
+                crates_by_name,
+                ordered_names,
+                incoming_counts,
             )
             raise WorkspaceDependencyCycleError(cycle_nodes)
 
