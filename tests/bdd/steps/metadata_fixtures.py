@@ -113,14 +113,11 @@ def given_cargo_metadata_sample(
         cmd_mox,
         workspace_directory,
         packages=[
-            {
-                "name": "alpha",
-                "version": "0.1.0",
-                "id": "alpha-id",
-                "manifest_path": str(manifest_path),
-                "dependencies": [],
-                "publish": None,
-            }
+            _build_package_metadata(
+                "alpha",
+                manifest_path,
+                version="0.1.0",
+            )
         ],
         member_ids=["alpha-id"],
     )
@@ -272,14 +269,11 @@ def given_cargo_metadata_two_crates(
             encoding="utf-8",
         )
         crate_entries.append(
-            {
-                "name": name,
-                "version": "0.1.0",
-                "id": f"{name}-id",
-                "manifest_path": str(manifest_path),
-                "dependencies": [],
-                "publish": None,
-            }
+            _build_package_metadata(
+                name,
+                manifest_path,
+                version="0.1.0",
+            )
         )
         members.append(f"crates/{name}")
     _write_workspace_manifest(workspace_directory, members)
