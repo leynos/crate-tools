@@ -405,8 +405,9 @@ names are listed before returning the user-specified order.
     `LADING_USE_CMD_MOX_STUB` environment variable: when set to a truthy value
     (`1`, `true`, `yes`, or `on`) the pre-flight invocations contact the
     cmd-mox IPC server instead of spawning real processes. Each subcommand is
-    encoded as `cargo::<name>` so that behavioural tests can record expectations
-    without interfering with the `cargo metadata` stub used elsewhere.
+    encoded as `cargo::<name>` so that behavioural tests can record
+    expectations without interfering with the `cargo metadata` stub used
+    elsewhere.
 
 3. **Iterate and Publish:** For each crate in the determined order:
 
