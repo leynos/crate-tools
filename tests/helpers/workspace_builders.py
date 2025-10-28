@@ -23,6 +23,7 @@ class _CrateSpec:
     manifest_extra: str = ""
     dependencies: tuple[WorkspaceDependency, ...] = ()
     version: str = "0.1.0"
+    readme_workspace: bool = False
 
 
 def _write_workspace_manifest(root: Path, members: tuple[str, ...]) -> Path:
@@ -50,15 +51,17 @@ def _write_crate_manifest(
     name: str,
     version: str,
     extra_sections: str = "",
+    include_workspace_readme: bool = False,
 ) -> None:
     """Write a crate manifest with optional dependency sections."""
-    content = textwrap.dedent(
-        f"""
-        [package]
-        name = "{name}"
-        version = "{version}"
-        """
-    ).lstrip()
+    header_lines = [
+        "[package]",
+        f'name = "{name}"',
+        f'version = "{version}"',
+    ]
+    if include_workspace_readme:
+        header_lines.append("readme.workspace = true")
+    content = "\n".join(header_lines) + "\n"
     if extra_sections:
         content += "\n" + textwrap.dedent(extra_sections).strip() + "\n"
     manifest_path.write_text(content, encoding="utf-8")
@@ -88,6 +91,7 @@ def _build_workspace_with_internal_deps(
             name=spec.name,
             version=spec.version,
             extra_sections=spec.manifest_extra,
+            include_workspace_readme=spec.readme_workspace,
         )
         manifests[spec.name] = manifest_path
         crates.append(
@@ -98,7 +102,7 @@ def _build_workspace_with_internal_deps(
                 manifest_path=manifest_path,
                 root_path=crate_dir,
                 publish=True,
-                readme_is_workspace=False,
+                readme_is_workspace=spec.readme_workspace,
                 dependencies=spec.dependencies,
             )
         )

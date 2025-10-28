@@ -108,6 +108,8 @@ def given_cargo_metadata_sample(
         """,
         encoding="utf-8",
     )
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text("# Workspace README\n", encoding="utf-8")
     _write_workspace_manifest(workspace_directory, ["crates/alpha"])
     _mock_cargo_metadata(
         cmd_mox,
@@ -276,6 +278,8 @@ def given_cargo_metadata_two_crates(
             )
         )
         members.append(f"crates/{name}")
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text("# Workspace README\n", encoding="utf-8")
     _write_workspace_manifest(workspace_directory, members)
     _mock_cargo_metadata(
         cmd_mox,

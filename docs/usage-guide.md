@@ -142,6 +142,10 @@ Publish plan for /workspace/path
 Strip patch strategy: all
 Crates to publish (1):
 - alpha @ 0.1.0
+
+Staged workspace at: /tmp/lading-publish-abc123/workspace
+Copied workspace README to:
+- crates/alpha/README.md
 ```
 
 The publish plan sorts crates so that internal dependencies appear before the
@@ -155,6 +159,13 @@ continuing.
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
 reasons for skipping crates visible to the operator.
+
+The preparation phase now clones the entire workspace into a temporary build
+directory before any packaging steps run. The CLI prints the location of this
+staging area so operators can inspect generated artifacts. Crates that declare
+`readme.workspace = true` receive a copy of the workspace `README.md` within the
+staged workspace. The summary lists each propagated README to confirm the files
+are ready for `cargo package`.
 
 ## Testing hooks
 

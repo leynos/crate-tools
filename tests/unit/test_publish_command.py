@@ -28,10 +28,21 @@ def _make_crate(
     *,
     publish_flag: bool = True,
     dependencies: tuple[WorkspaceDependency, ...] | None = None,
+    readme_flag: bool = False,
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``."""
+    root.mkdir(parents=True, exist_ok=True)
     crate_root = root / name
+    crate_root.mkdir(parents=True, exist_ok=True)
     manifest = crate_root / "Cargo.toml"
+    header_lines = [
+        "[package]",
+        f'name = "{name}"',
+        'version = "0.1.0"',
+    ]
+    if readme_flag:
+        header_lines.append("readme.workspace = true")
+    manifest.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
     return WorkspaceCrate(
         id=f"{name}-id",
         name=name,
@@ -39,7 +50,7 @@ def _make_crate(
         manifest_path=manifest,
         root_path=crate_root,
         publish=publish_flag,
-        readme_is_workspace=False,
+        readme_is_workspace=readme_flag,
         dependencies=() if dependencies is None else dependencies,
     )
 
@@ -424,7 +435,11 @@ def test_run_normalises_workspace_root(
         return plan_workspace
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
-    output = publish.run(workspace, configuration)
+    output = publish.run(
+        workspace,
+        configuration,
+        options=publish.PublishOptions(build_directory=tmp_path / "staging"),
+    )
 
     assert output.splitlines()[0] == f"Publish plan for {resolved}"
 
@@ -439,7 +454,10 @@ def test_run_uses_active_configuration(
     workspace = _make_workspace(root, _make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
 
-    output = publish.run(tmp_path)
+    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
+    output = publish.run(
+        tmp_path, options=publish.PublishOptions(build_directory=staging_root)
+    )
 
     assert "skip-me" in output
 
@@ -465,7 +483,10 @@ def test_run_loads_configuration_when_inactive(
     monkeypatch.setattr(config_module, "current_configuration", raise_not_loaded)
     monkeypatch.setattr(config_module, "load_configuration", capture_load)
 
-    output = publish.run(root)
+    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
+    output = publish.run(
+        root, options=publish.PublishOptions(build_directory=staging_root)
+    )
 
     assert "Crates to publish" in output
     assert load_calls == [root]
@@ -480,7 +501,13 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     workspace = _make_workspace(root, publishable, manifest_skipped, config_skipped)
     configuration = _make_config(exclude=("gamma", "missing"))
 
-    message = publish.run(root, configuration, workspace)
+    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
+    message = publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(build_directory=staging_root),
+    )
 
     lines = message.splitlines()
     assert lines[0] == f"Publish plan for {root}"
@@ -492,6 +519,8 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     assert "- gamma" in lines
     assert "Configured exclusions not found in workspace:" in lines
     assert "- missing" in lines
+    assert any(line.startswith("Staged workspace at:") for line in lines)
+    assert "Copied workspace README to: none required" in lines
 
 
 def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
@@ -505,7 +534,13 @@ def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
     )
     configuration = _make_config(exclude=("beta", "gamma"))
 
-    message = publish.run(root, configuration, workspace)
+    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
+    message = publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(build_directory=staging_root),
+    )
 
     lines = message.splitlines()
     assert "Crates to publish: none" in lines
@@ -514,6 +549,8 @@ def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
     assert "Skipped via publish.exclude:" in lines
     assert "- beta" in lines
     assert "- gamma" in lines
+    assert any(line.startswith("Staged workspace at:") for line in lines)
+    assert "Copied workspace README to: none required" in lines
 
 
 def test_run_surfaces_missing_workspace(
@@ -619,3 +656,48 @@ def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
     assert lines[manifest_index + 1] == "- beta"
     assert lines[configuration_index + 1] == "- gamma"
     assert lines[missing_index + 1] == "- missing"
+
+
+def test_prepare_workspace_copies_workspace_readme(tmp_path: Path) -> None:
+    """Staging copies the workspace README into crates that opt in."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    readme = workspace_root / "README.md"
+    readme.write_text("Workspace README", encoding="utf-8")
+    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    workspace = _make_workspace(workspace_root, crate)
+    configuration = _make_config()
+    plan = publish.plan_publication(workspace, configuration)
+    options = publish.PublishOptions(build_directory=tmp_path / "staging")
+
+    preparation = publish.prepare_workspace(plan, workspace, options=options)
+
+    staging_root = preparation.staging_root
+    assert staging_root.exists()
+    staged_readme = (
+        staging_root / crate.root_path.relative_to(workspace_root) / "README.md"
+    )
+    assert staged_readme.exists()
+    assert staged_readme.read_text(encoding="utf-8") == readme.read_text(
+        encoding="utf-8"
+    )
+    assert staged_readme in preparation.copied_readmes
+
+
+def test_prepare_workspace_requires_workspace_readme(tmp_path: Path) -> None:
+    """Staging fails fast when crates expect the workspace README."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    workspace = _make_workspace(workspace_root, crate)
+    configuration = _make_config()
+    plan = publish.plan_publication(workspace, configuration)
+
+    with pytest.raises(publish.PublishPreparationError) as excinfo:
+        publish.prepare_workspace(
+            plan,
+            workspace,
+            options=publish.PublishOptions(build_directory=tmp_path / "staging"),
+        )
+
+    assert "README.md" in str(excinfo.value)
