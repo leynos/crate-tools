@@ -393,6 +393,21 @@ names are listed before returning the user-specified order.
     - Run `cargo check --all-targets` for the entire workspace.
     - Run `cargo test --all-targets` for the entire workspace.
 
+    Implementation detail: the command now uses `shutil.copytree` to clone the
+    workspace into a temporary directory, skipping `.git` metadata and the
+    `target` directory to minimise copy time while still reproducing source
+    state. Both cargo commands run from inside the clone via `plumbum`, and any
+    non-zero exit aborts the workflow with the captured stderr. Before cloning
+    the repository, `git status --porcelain` verifies that the working tree is
+    clean; operators can pass `--allow-dirty` to bypass the cleanliness guard
+    when they intentionally want to exercise uncommitted changes. For testing
+    and controlled environments the helper honours the
+    `LADING_USE_CMD_MOX_STUB` environment variable: when present the pre-flight
+    invocations contact the cmd-mox IPC server instead of spawning real
+    processes. Each subcommand is encoded as `cargo::<name>` so that behavioural
+    tests can record expectations without interfering with the `cargo metadata`
+    stub used elsewhere.
+
 3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is

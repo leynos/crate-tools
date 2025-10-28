@@ -170,7 +170,7 @@ occur.
     workspace with a dependency cycle. The explicit `publish.order`
     configuration is also honoured when present.
 
-- [ ] **Implement Pre-Publish Checks:**
+- [x] **Implement Pre-Publish Checks:**
 
   - **Outcome:** The command executes `cargo check` and `cargo test` in a
     clean, temporary clone of the workspace before proceeding.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import dataclasses as dc
+import os
 import shutil
 import tempfile
 import typing as typ
@@ -12,10 +13,14 @@ from pathlib import Path
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import WorkspaceDependencyCycleError
+from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
+
+from plumbum import local
+from plumbum.commands.processes import CommandNotFound
 
 
 class PublishPlanError(RuntimeError):
@@ -44,11 +49,14 @@ class PublishPlan:
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
-    """Configuration for publish command execution."""
+    """Runtime configuration for publish planning, staging, and checks."""
 
+    allow_dirty: bool = False
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = False
+    configuration: LadingConfig | None = None
+    workspace: WorkspaceGraph | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -57,6 +65,10 @@ class PublishPreparation:
 
     staging_root: Path
     copied_readmes: tuple[Path, ...]
+
+
+class PublishPreflightError(RuntimeError):
+    """Raised when required pre-publication checks fail."""
 
 
 def _categorize_crates(
@@ -525,16 +537,146 @@ def run(
 ) -> str:
     """Plan and prepare crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
+    effective_options = PublishOptions() if options is None else options
+    configuration_override = configuration or effective_options.configuration
+    workspace_override = workspace or effective_options.workspace
 
-    active_configuration = _ensure_configuration(configuration, root_path)
-    active_workspace = _ensure_workspace(workspace, root_path)
+    active_configuration = _ensure_configuration(configuration_override, root_path)
+    active_workspace = _ensure_workspace(workspace_override, root_path)
 
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
+    _run_preflight_checks(root_path, allow_dirty=effective_options.allow_dirty)
     preparation = prepare_workspace(plan, active_workspace, options=options)
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
     )
     summary_lines = _format_preparation_summary(preparation)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
+
+
+def _run_preflight_checks(workspace_root: Path, *, allow_dirty: bool) -> None:
+    """Execute publish pre-flight checks for ``workspace_root``."""
+    _verify_clean_working_tree(workspace_root, allow_dirty=allow_dirty)
+
+    with tempfile.TemporaryDirectory(prefix="lading-publish-") as temp_dir:
+        clone_root = Path(temp_dir) / "workspace"
+        _clone_workspace_for_checks(workspace_root, clone_root)
+        _run_cargo_preflight(clone_root, "check")
+        _run_cargo_preflight(clone_root, "test")
+
+
+def _verify_clean_working_tree(workspace_root: Path, *, allow_dirty: bool) -> None:
+    """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
+    if allow_dirty:
+        return
+
+    exit_code, stdout, stderr = _invoke(
+        ("git", "status", "--porcelain"), cwd=workspace_root
+    )
+    if exit_code != 0:
+        detail = stderr.strip() or stdout.strip()
+        message = "Failed to verify workspace state with git status"
+        if detail:
+            message = f"{message}: {detail}"
+        raise PublishPreflightError(message)
+    if stdout.strip():
+        message = (
+            "Workspace has uncommitted changes; commit or stash them "
+            "before publishing or re-run with --allow-dirty."
+        )
+        raise PublishPreflightError(message)
+
+
+def _clone_workspace_for_checks(source: Path, destination: Path) -> None:
+    """Copy ``source`` into ``destination`` for isolated pre-flight checks."""
+    try:
+        shutil.copytree(
+            source,
+            destination,
+            symlinks=True,
+            ignore=shutil.ignore_patterns(".git", "target"),
+        )
+    except OSError as exc:  # pragma: no cover - defensive guard for filesystem issues
+        message = "Failed to clone workspace for pre-flight checks"
+        detail = f"{message}: {exc}"
+        raise PublishPreflightError(detail) from exc
+
+
+def _run_cargo_preflight(clone_root: Path, subcommand: str) -> None:
+    """Run ``cargo <subcommand>`` inside ``clone_root``."""
+    exit_code, stdout, stderr = _invoke(
+        ("cargo", subcommand, "--workspace", "--all-targets"), cwd=clone_root
+    )
+    if exit_code != 0:
+        detail = stderr.strip() or stdout.strip()
+        message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise PublishPreflightError(message)
+
+
+def _invoke(
+    command: typ.Sequence[str], *, cwd: Path | None = None
+) -> tuple[int, str, str]:
+    """Execute ``command`` and return the exit status and decoded streams."""
+    if os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR):
+        return _invoke_via_cmd_mox(command, cwd)
+    program, *args = command
+    try:
+        bound = local[program]
+    except CommandNotFound as exc:
+        message = f"{program} executable not found while running pre-flight checks"
+        raise PublishPreflightError(message) from exc
+    if args:
+        bound = bound[args]
+    kwargs: dict[str, typ.Any] = {"retcode": None}
+    if cwd is not None:
+        kwargs["cwd"] = str(cwd)
+    exit_code, stdout, stderr = bound.run(**kwargs)
+    return exit_code, _coerce_text(stdout), _coerce_text(stderr)
+
+
+def _coerce_text(value: str | bytes) -> str:
+    """Return ``value`` as a decoded text string."""
+    return value.decode("utf-8") if isinstance(value, bytes) else value
+
+
+def _invoke_via_cmd_mox(
+    command: typ.Sequence[str], cwd: Path | None
+) -> tuple[int, str, str]:
+    """Route ``command`` through the cmd-mox IPC server when enabled."""
+    try:
+        ipc, env_mod = metadata_module._load_cmd_mox_modules()
+        timeout = metadata_module._resolve_cmd_mox_timeout(
+            os.environ.get(env_mod.CMOX_IPC_TIMEOUT_ENV)
+        )
+    except metadata_module.CargoMetadataError as exc:  # pragma: no cover - defensive
+        raise PublishPreflightError(str(exc)) from exc
+    if not os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV):
+        message = (
+            "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+        )
+        raise PublishPreflightError(message)
+    program, *args = command
+    invocation_program = program
+    invocation_args = list(args)
+    if program == "cargo" and args:
+        invocation_program = f"{program}::{args[0]}"
+        invocation_args = args[1:]
+    invocation = ipc.Invocation(
+        command=invocation_program,
+        args=invocation_args,
+        stdin="",
+        env=metadata_module._build_invocation_environment(
+            None if cwd is None else str(cwd)
+        ),
+    )
+    response = ipc.invoke_server(invocation, timeout)
+    return (
+        response.exit_code,
+        _coerce_text(response.stdout),
+        _coerce_text(response.stderr),
+    )
+>>>>>>> 9a69013 (Add publish pre-flight checks)

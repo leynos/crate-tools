@@ -127,8 +127,16 @@ Dry run; would update version to 1.2.3 in 3 manifest(s):
 `publish = false`, and prints a structured summary listing the crates that will
 be published. Additional sections document crates skipped by manifest flags or
 configuration, along with any exclusion entries that do not match a workspace
-crate. This early feedback allows release engineers to validate the plan before
-later roadmap steps begin executing pre-flight checks and cargo commands.
+crate. After building the plan, `publish` clones the workspace into a temporary
+directory and runs `cargo check --workspace --all-targets` followed by
+`cargo test --workspace --all-targets`. Both checks execute inside the clone so
+that the operator's working tree remains untouched. Any non-zero exit aborts
+the command with a descriptive error message.
+
+The subcommand also performs a `git status --porcelain` check before creating
+the clone. If the working tree contains uncommitted changes the run halts with
+a reminder to clean up or to re-run with `--allow-dirty`. Passing the flag
+skips the cleanliness check while still running the cargo pre-flight commands.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish
@@ -175,10 +183,12 @@ temporary directory automatically at process exit.
 ## Testing hooks
 
 Behavioural tests invoke the CLI as an external process and spy on the `python`
-executable with [`cmd-mox`](./cmd-mox-usage-guide.md). This pattern keeps the
-tests faithful to real user interactions while still providing strict control
-over command invocations. Use the same approach when adding new end-to-end
-scenarios.
+executable with [`cmd-mox`](./cmd-mox-usage-guide.md). Setting
+`LADING_USE_CMD_MOX_STUB=1` forces publish pre-flight checks to proxy through
+the cmd-mox IPC server so that the suite can assert on `cargo::<subcommand>`
+invocations without launching real tools. This pattern keeps the tests faithful
+to real user interactions while still providing strict control over command
+invocations. Use the same approach when adding new end-to-end scenarios.
 
 ## Workspace discovery helpers
 

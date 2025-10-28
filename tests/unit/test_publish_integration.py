@@ -9,7 +9,7 @@ import pytest
 from lading import config as config_module
 from lading.commands import publish
 from lading.workspace import WorkspaceCrate, WorkspaceGraph, WorkspaceModelError
-from tests.unit.conftest import _CrateSpec
+from tests.unit.conftest import _CrateSpec, _ORIGINAL_PREFLIGHT
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -206,3 +206,160 @@ def test_run_surfaces_configuration_errors(
         publish.run(tmp_path)
 
     assert str(excinfo.value) == "invalid configuration"
+
+
+def test_run_executes_preflight_checks_in_clone(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+) -> None:
+    """Pre-flight commands run inside an isolated workspace clone."""
+
+    monkeypatch.setattr(publish, "_run_preflight_checks", _ORIGINAL_PREFLIGHT)
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    clone_paths: list[Path] = []
+
+    def fake_clone(source: Path, destination: Path) -> None:
+        assert source == root
+        destination.mkdir()
+        clone_paths.append(destination)
+
+    monkeypatch.setattr(publish, "_clone_workspace_for_checks", fake_clone)
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def fake_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", fake_invoke)
+
+    message = publish.run(root, configuration, workspace)
+
+    assert message.startswith(f"Publish plan for {root}")
+    assert clone_paths, "clone helper should have been invoked"
+    clone_root = clone_paths[0]
+    assert ("git", "status", "--porcelain") in {
+        command for command, _cwd in calls
+    }
+    assert (
+        ("cargo", "check", "--workspace", "--all-targets"),
+        clone_root,
+    ) in calls
+    assert (
+        ("cargo", "test", "--workspace", "--all-targets"),
+        clone_root,
+    ) in calls
+
+
+def test_run_raises_when_preflight_command_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+) -> None:
+    """Non-zero cargo check aborts the publish command."""
+
+    monkeypatch.setattr(publish, "_run_preflight_checks", _ORIGINAL_PREFLIGHT)
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    monkeypatch.setattr(
+        publish,
+        "_clone_workspace_for_checks",
+        lambda _source, destination: destination.mkdir(),
+    )
+
+    def failing_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            return 0, "", ""
+        if command[1] == "check":
+            return 1, "", "check failed"
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish.run(root, configuration, workspace)
+
+    message = str(excinfo.value)
+    assert "cargo check" in message
+    assert "exit code 1" in message
+
+
+def test_allow_dirty_flag_skips_clean_check(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+) -> None:
+    """``allow_dirty`` bypasses the git status cleanliness guard."""
+
+    monkeypatch.setattr(publish, "_run_preflight_checks", _ORIGINAL_PREFLIGHT)
+    root = tmp_path.resolve()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    clone_destinations: list[Path] = []
+
+    def fake_clone(source: Path, destination: Path) -> None:
+        destination.mkdir()
+        clone_destinations.append(destination)
+
+    monkeypatch.setattr(publish, "_clone_workspace_for_checks", fake_clone)
+
+    def dirty_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            return 0, " M Cargo.toml\n", ""
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", dirty_invoke)
+
+    with pytest.raises(publish.PublishPreflightError):
+        publish.run(root, configuration, workspace)
+
+    calls: list[tuple[tuple[str, ...], Path | None]] = []
+
+    def allow_dirty_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            message = "git status should be skipped when allow-dirty is set"
+            raise AssertionError(message)
+        calls.append((tuple(command), cwd))
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", allow_dirty_invoke)
+
+    message = publish.run(
+        root,
+        configuration,
+        workspace,
+        options=publish.PublishOptions(allow_dirty=True),
+    )
+
+    assert message.startswith(f"Publish plan for {root}")
+    assert clone_destinations, "clone helper should still run with allow-dirty"
+    clone_root = clone_destinations[-1]
+    assert (
+        ("cargo", "check", "--workspace", "--all-targets"),
+        clone_root,
+    ) in calls
+    assert (
+        ("cargo", "test", "--workspace", "--all-targets"),
+        clone_root,
+    ) in calls
