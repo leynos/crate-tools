@@ -125,6 +125,14 @@ def given_cargo_metadata_sample(
     )
 
 
+@given("the workspace README is removed")
+def given_workspace_readme_removed(workspace_directory: Path) -> None:
+    """Delete the workspace README to exercise error handling paths."""
+    readme_path = workspace_directory / "README.md"
+    if readme_path.exists():
+        readme_path.unlink()
+
+
 @given("cargo metadata describes a workspace with a dev dependency cycle")
 def given_cargo_metadata_with_dev_dependency_cycle(
     cmd_mox: CmdMox,

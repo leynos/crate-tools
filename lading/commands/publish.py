@@ -356,13 +356,10 @@ def _normalise_build_directory(
         return Path(tempfile.mkdtemp(prefix="lading-publish-"))
 
     candidate = Path(build_directory).expanduser()
-    if not candidate.is_absolute():
-        candidate = candidate.resolve(strict=False)
-    else:
-        candidate = candidate.resolve(strict=False)
+    candidate = candidate.resolve(strict=False)
 
     workspace_root = workspace_root.resolve(strict=True)
-    candidate_resolved = candidate.resolve(strict=False)
+    candidate_resolved = candidate
     if candidate_resolved.is_relative_to(workspace_root):
         message = "Publish build directory cannot reside within the workspace root"
         raise PublishPreparationError(message)

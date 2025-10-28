@@ -658,6 +658,232 @@ def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
     assert lines[missing_index + 1] == "- missing"
 
 
+def test_normalise_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
+    """Normalisation creates a temporary directory when none is provided."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    build_directory = publish._normalise_build_directory(workspace_root, None)
+
+    assert build_directory.exists()
+    assert build_directory.is_absolute()
+    assert not build_directory.is_relative_to(workspace_root)
+
+
+def test_normalise_build_directory_resolves_relative_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Relative build directories are resolved against the current directory."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    build_directory = publish._normalise_build_directory(
+        workspace_root, Path("staging")
+    )
+
+    expected = (tmp_path / "staging").resolve()
+    assert build_directory == expected
+    assert build_directory.exists()
+
+
+def test_normalise_build_directory_rejects_workspace_descendants(
+    tmp_path: Path,
+) -> None:
+    """Normalisation rejects build directories nested under the workspace."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    build_directory = workspace_root / "target"
+
+    with pytest.raises(publish.PublishPreparationError) as excinfo:
+        publish._normalise_build_directory(workspace_root, build_directory)
+
+    assert "cannot reside within the workspace root" in str(excinfo.value)
+
+
+def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
+    """Workspace files are cloned into the staging directory."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    manifest = workspace_root / "Cargo.toml"
+    manifest.write_text("[workspace]\n", encoding="utf-8")
+    nested_dir = workspace_root / "crates" / "alpha"
+    nested_dir.mkdir(parents=True)
+    nested_file = nested_dir / "README.md"
+    nested_file.write_text("# README\n", encoding="utf-8")
+
+    build_directory = tmp_path / "staging"
+    build_directory.mkdir()
+
+    staging_root = publish._copy_workspace_tree(workspace_root, build_directory)
+
+    assert staging_root == build_directory / workspace_root.name
+    assert (staging_root / "Cargo.toml").read_text(encoding="utf-8") == "[workspace]\n"
+    assert (staging_root / "crates" / "alpha" / "README.md").read_text(
+        encoding="utf-8"
+    ) == "# README\n"
+
+
+def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
+    """Existing staging directories are replaced with a fresh copy."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    (workspace_root / "marker.txt").write_text("fresh", encoding="utf-8")
+
+    build_directory = tmp_path / "staging"
+    existing_clone = build_directory / workspace_root.name
+    existing_clone.mkdir(parents=True)
+    stale_file = existing_clone / "stale.txt"
+    stale_file.write_text("stale", encoding="utf-8")
+
+    staging_root = publish._copy_workspace_tree(workspace_root, build_directory)
+
+    assert staging_root == existing_clone
+    assert not stale_file.exists()
+    assert (staging_root / "marker.txt").read_text(encoding="utf-8") == "fresh"
+
+
+def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
+    """Copying into a directory under the workspace is prohibited."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    with pytest.raises(publish.PublishPreparationError) as excinfo:
+        publish._copy_workspace_tree(workspace_root, workspace_root)
+
+    assert "cannot be nested inside the workspace root" in str(excinfo.value)
+
+
+def test_stage_workspace_readmes_returns_empty_list_when_unused(
+    tmp_path: Path,
+) -> None:
+    """No work is performed when no crates opt into the workspace README."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+
+    copied = publish._stage_workspace_readmes(
+        crates=(), workspace_root=workspace_root, staging_root=staging_root
+    )
+
+    assert copied == []
+
+
+def test_stage_workspace_readmes_copies_and_sorts_targets(tmp_path: Path) -> None:
+    """Workspace README is copied into each opted-in crate in sorted order."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    readme = workspace_root / "README.md"
+    readme.write_text("workspace", encoding="utf-8")
+    crate_alpha = _make_crate(workspace_root, "alpha", readme_flag=True)
+    crate_beta = _make_crate(workspace_root, "beta", readme_flag=True)
+    staging_root = tmp_path / "staging" / "workspace"
+    staging_root.mkdir(parents=True)
+
+    copied = publish._stage_workspace_readmes(
+        crates=(crate_beta, crate_alpha),
+        workspace_root=workspace_root,
+        staging_root=staging_root,
+    )
+
+    relative = [path.relative_to(staging_root).as_posix() for path in copied]
+    assert relative == ["alpha/README.md", "beta/README.md"]
+    for path in copied:
+        assert path.read_text(encoding="utf-8") == "workspace"
+
+
+def test_stage_workspace_readmes_requires_workspace_readme(tmp_path: Path) -> None:
+    """Crates requesting the workspace README require the source file."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+
+    with pytest.raises(publish.PublishPreparationError) as excinfo:
+        publish._stage_workspace_readmes(
+            crates=(crate,), workspace_root=workspace_root, staging_root=staging_root
+        )
+
+    assert "Workspace README.md is required" in str(excinfo.value)
+
+
+def test_stage_workspace_readmes_rejects_external_crates(tmp_path: Path) -> None:
+    """Crates outside the workspace cannot receive the workspace README."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    readme = workspace_root / "README.md"
+    readme.write_text("workspace", encoding="utf-8")
+
+    external_root = tmp_path / "external"
+    crate = _make_crate(external_root, "alpha", readme_flag=True)
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+
+    with pytest.raises(publish.PublishPreparationError) as excinfo:
+        publish._stage_workspace_readmes(
+            crates=(crate,), workspace_root=workspace_root, staging_root=staging_root
+        )
+
+    assert "outside the workspace root" in str(excinfo.value)
+
+
+def test_format_preparation_summary_lists_copied_readmes(tmp_path: Path) -> None:
+    """Summary includes relative README paths when copies exist."""
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+    readme_alpha = staging_root / "crates" / "alpha" / "README.md"
+    readme_beta = staging_root / "crates" / "beta" / "README.md"
+    for path in (readme_alpha, readme_beta):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("workspace", encoding="utf-8")
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root, copied_readmes=(readme_alpha, readme_beta)
+    )
+
+    lines = publish._format_preparation_summary(preparation)
+
+    assert lines[0] == f"Staged workspace at: {staging_root}"
+    assert "Copied workspace README to:" in lines[1]
+    assert "- crates/alpha/README.md" in lines
+    assert "- crates/beta/README.md" in lines
+
+
+def test_format_preparation_summary_handles_external_paths(tmp_path: Path) -> None:
+    """Summary falls back to absolute paths when not under the staging root."""
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+    external_readme = tmp_path.parent / "external-readme.md"
+    external_readme.write_text("workspace", encoding="utf-8")
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root, copied_readmes=(external_readme,)
+    )
+
+    lines = publish._format_preparation_summary(preparation)
+
+    assert lines[0] == f"Staged workspace at: {staging_root}"
+    assert lines[1] == "Copied workspace README to:"
+    assert f"- {external_readme}" in lines
+
+
+def test_format_preparation_summary_reports_absence(tmp_path: Path) -> None:
+    """Summary highlights when no README copies were required."""
+    staging_root = tmp_path / "staging"
+    staging_root.mkdir()
+    preparation = publish.PublishPreparation(
+        staging_root=staging_root, copied_readmes=()
+    )
+
+    lines = publish._format_preparation_summary(preparation)
+
+    assert lines == (
+        f"Staged workspace at: {staging_root}",
+        "Copied workspace README to: none required",
+    )
+
+
 def test_prepare_workspace_copies_workspace_readme(tmp_path: Path) -> None:
     """Staging copies the workspace README into crates that opt in."""
     workspace_root = tmp_path / "workspace"
