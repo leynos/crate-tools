@@ -156,6 +156,12 @@ Feature: Lading CLI scaffolding
     Then the CLI exits with code 1
     And the stderr contains "Pre-flight cargo test failed with exit code 1: cargo test failed"
 
+  Scenario: Publish pre-flight aborts when cmd-mox socket is missing
+    Given a workspace directory with configuration
+    And cmd-mox IPC socket is unset
+    When I run publish pre-flight checks for that workspace
+    Then the publish pre-flight error contains "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+
   Scenario: Publish command rejects dirty workspaces without allow-dirty
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

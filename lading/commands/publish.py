@@ -8,6 +8,7 @@ import os
 import shutil
 import tempfile
 import typing as typ
+from contextlib import contextmanager
 from pathlib import Path
 
 from lading import config as config_module
@@ -47,6 +48,15 @@ class PublishPlan:
         return tuple(crate.name for crate in self.publishable)
 
 
+class _CommandRunner(typ.Protocol):
+    """Protocol describing the callable used to execute shell commands."""
+
+    def __call__(
+        self, command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        """Execute ``command`` and return exit status and decoded output."""
+
+
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
     """Runtime configuration for publish planning, staging, and checks."""
@@ -57,6 +67,7 @@ class PublishOptions:
     cleanup: bool = False
     configuration: LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
+    command_runner: _CommandRunner | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -540,6 +551,7 @@ def run(
     effective_options = PublishOptions() if options is None else options
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
+    command_runner = effective_options.command_runner or _invoke
 
     active_configuration = _ensure_configuration(configuration_override, root_path)
     active_workspace = _ensure_workspace(workspace_override, root_path)
@@ -547,7 +559,11 @@ def run(
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
-    _run_preflight_checks(root_path, allow_dirty=effective_options.allow_dirty)
+    _run_preflight_checks(
+        root_path,
+        allow_dirty=effective_options.allow_dirty,
+        runner=command_runner,
+    )
     preparation = prepare_workspace(plan, active_workspace, options=options)
     plan_message = _format_plan(
         plan, strip_patches=active_configuration.publish.strip_patches
@@ -556,24 +572,33 @@ def run(
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
 
 
-def _run_preflight_checks(workspace_root: Path, *, allow_dirty: bool) -> None:
+def _run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    runner: _CommandRunner | None = None,
+) -> None:
     """Execute publish pre-flight checks for ``workspace_root``."""
-    _verify_clean_working_tree(workspace_root, allow_dirty=allow_dirty)
+    command_runner = runner or _invoke
+    _verify_clean_working_tree(
+        workspace_root, allow_dirty=allow_dirty, runner=command_runner
+    )
 
-    with tempfile.TemporaryDirectory(prefix="lading-publish-") as temp_dir:
-        clone_root = Path(temp_dir) / "workspace"
-        _clone_workspace_for_checks(workspace_root, clone_root)
-        _run_cargo_preflight(clone_root, "check")
-        _run_cargo_preflight(clone_root, "test")
+    with _workspace_clone(workspace_root) as clone_root:
+        _run_cargo_preflight(clone_root, "check", runner=command_runner)
+        _run_cargo_preflight(clone_root, "test", runner=command_runner)
 
 
-def _verify_clean_working_tree(workspace_root: Path, *, allow_dirty: bool) -> None:
+def _verify_clean_working_tree(
+    workspace_root: Path, *, allow_dirty: bool, runner: _CommandRunner
+) -> None:
     """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
     if allow_dirty:
         return
 
-    exit_code, stdout, stderr = _invoke(
-        ("git", "status", "--porcelain"), cwd=workspace_root
+    exit_code, stdout, stderr = runner(
+        ("git", "status", "--porcelain"),
+        cwd=workspace_root,
     )
     if exit_code != 0:
         detail = stderr.strip() or stdout.strip()
@@ -604,9 +629,11 @@ def _clone_workspace_for_checks(source: Path, destination: Path) -> None:
         raise PublishPreflightError(detail) from exc
 
 
-def _run_cargo_preflight(clone_root: Path, subcommand: str) -> None:
+def _run_cargo_preflight(
+    clone_root: Path, subcommand: str, *, runner: _CommandRunner
+) -> None:
     """Run ``cargo <subcommand>`` inside ``clone_root``."""
-    exit_code, stdout, stderr = _invoke(
+    exit_code, stdout, stderr = runner(
         ("cargo", subcommand, "--workspace", "--all-targets"), cwd=clone_root
     )
     if exit_code != 0:
@@ -617,20 +644,30 @@ def _run_cargo_preflight(clone_root: Path, subcommand: str) -> None:
         raise PublishPreflightError(message)
 
 
+@contextmanager
+def _workspace_clone(source: Path) -> typ.Iterator[Path]:
+    """Yield a temporary workspace clone for running pre-flight checks."""
+    with tempfile.TemporaryDirectory(prefix="lading-publish-") as temp_dir:
+        clone_root = Path(temp_dir) / "workspace"
+        _clone_workspace_for_checks(source, clone_root)
+        yield clone_root
+
+
 def _invoke(
     command: typ.Sequence[str], *, cwd: Path | None = None
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
-    if os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR):
+    if _should_use_cmd_mox_stub():
         return _invoke_via_cmd_mox(command, cwd)
-    program, *args = command
+
+    program, args = _split_command(command)
     try:
         bound = local[program]
     except CommandNotFound as exc:
         message = f"{program} executable not found while running pre-flight checks"
         raise PublishPreflightError(message) from exc
     if args:
-        bound = bound[args]
+        bound = bound[list(args)]
     kwargs: dict[str, typ.Any] = {"retcode": None}
     if cwd is not None:
         kwargs["cwd"] = str(cwd)
@@ -640,7 +677,25 @@ def _invoke(
 
 def _coerce_text(value: str | bytes) -> str:
     """Return ``value`` as a decoded text string."""
-    return value.decode("utf-8") if isinstance(value, bytes) else value
+    return (
+        value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+    )
+
+
+def _split_command(command: typ.Sequence[str]) -> tuple[str, tuple[str, ...]]:
+    """Return the program and argument tuple for ``command``."""
+    if not command:
+        message = "Command sequence must contain at least one entry"
+        raise PublishPreflightError(message)
+    program = command[0]
+    args = tuple(command[1:])
+    return program, args
+
+
+def _should_use_cmd_mox_stub() -> bool:
+    """Return ``True`` when publish invocations should use cmd-mox."""
+    stub_env_val = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR, "")
+    return stub_env_val.lower() in {"1", "true", "yes", "on"}
 
 
 def _invoke_via_cmd_mox(
@@ -659,12 +714,8 @@ def _invoke_via_cmd_mox(
             "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
         )
         raise PublishPreflightError(message)
-    program, *args = command
-    invocation_program = program
-    invocation_args = list(args)
-    if program == "cargo" and args:
-        invocation_program = f"{program}::{args[0]}"
-        invocation_args = args[1:]
+    program, args = _split_command(command)
+    invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
     invocation = ipc.Invocation(
         command=invocation_program,
         args=invocation_args,
@@ -679,4 +730,15 @@ def _invoke_via_cmd_mox(
         _coerce_text(response.stdout),
         _coerce_text(response.stderr),
     )
->>>>>>> 9a69013 (Add publish pre-flight checks)
+
+
+def _normalise_cmd_mox_command(
+    program: str, args: tuple[str, ...]
+) -> tuple[str, list[str]]:
+    """Return the command name and argument list for cmd-mox invocations."""
+    invocation_program = program
+    invocation_args = list(args)
+    if program == "cargo" and args:
+        invocation_program = f"{program}::{args[0]}"
+        invocation_args = list(args[1:])
+    return invocation_program, invocation_args

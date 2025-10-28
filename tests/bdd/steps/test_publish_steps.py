@@ -9,6 +9,9 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, parsers, then, when
 
+from lading.commands import publish
+from lading.workspace import metadata as metadata_module
+
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
@@ -35,6 +38,32 @@ def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
     """Provide per-scenario overrides for publish pre-flight commands."""
 
     return {}
+
+
+@given("cmd-mox IPC socket is unset")
+def given_cmd_mox_socket_unset(
+    monkeypatch: pytest.MonkeyPatch, cmd_mox: CmdMox
+) -> None:
+    """Ensure cmd-mox stub usage fails due to a missing socket variable."""
+    from cmd_mox import environment as env_mod
+
+    del cmd_mox
+    monkeypatch.delenv(env_mod.CMOX_IPC_SOCKET_ENV, raising=False)
+    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")
+
+
+@when(
+    "I run publish pre-flight checks for that workspace",
+    target_fixture="preflight_result",
+)
+def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, typ.Any]:
+    """Execute publish pre-flight checks directly and capture failures."""
+    error: publish.PublishPreflightError | None = None
+    try:
+        publish._run_preflight_checks(workspace_directory, allow_dirty=False)
+    except publish.PublishPreflightError as exc:
+        error = exc
+    return {"error": error}
 
 
 def _register_preflight_commands(
@@ -315,3 +344,18 @@ def then_publish_lists_copied_readme(
     staged_readme = staging_root / expected_relative
     assert staged_readme.exists()
 
+
+@then(
+    "the publish pre-flight error contains "
+    '"cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"'
+)
+def then_publish_preflight_reports_missing_socket(
+    preflight_result: dict[str, typ.Any],
+) -> None:
+    """Assert that publish pre-flight checks report the missing socket."""
+    error = preflight_result.get("error")
+    assert isinstance(error, publish.PublishPreflightError)
+    assert (
+        "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+        in str(error)
+    )
