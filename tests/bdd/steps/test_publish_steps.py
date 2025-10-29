@@ -66,6 +66,11 @@ def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, ty
     return {"error": error}
 
 
+def _is_cargo_action_command(program: str, args: tuple[str, ...]) -> bool:
+    """Check if command is a cargo check or test invocation."""
+    return program == "cargo" and bool(args) and args[0] in {"check", "test"}
+
+
 def _register_preflight_commands(
     cmd_mox: CmdMox,
     overrides: dict[tuple[str, ...], _CommandResponse],
@@ -92,7 +97,7 @@ def _register_preflight_commands(
         program, *args = command
         expectation_program = program
         expectation_args = tuple(args)
-        if program == "cargo" and args and args[0] in {"check", "test"}:
+        if _is_cargo_action_command(program, tuple(args)):
             expectation_program = f"cargo::{args[0]}"
             expectation_args = tuple(args[1:])
         double = cmd_mox.stub(expectation_program)
@@ -103,6 +108,20 @@ def _register_preflight_commands(
         )
 
 
+def _invoke_publish_with_options(
+    workspace_directory: Path,
+    repo_root: Path,
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    *extra_args: str,
+) -> dict[str, typ.Any]:
+    """Execute the publish CLI with optional extra arguments."""
+    from .test_common_steps import _run_cli
+
+    _register_preflight_commands(cmd_mox, preflight_overrides)
+    return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
+
+
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
 def when_invoke_lading_publish(
     workspace_directory: Path,
@@ -111,11 +130,9 @@ def when_invoke_lading_publish(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-
-    from .test_common_steps import _run_cli
-
-    _register_preflight_commands(cmd_mox, preflight_overrides)
-    return _run_cli(repo_root, workspace_directory, "publish")
+    return _invoke_publish_with_options(
+        workspace_directory, repo_root, cmd_mox, preflight_overrides
+    )
 
 
 @when(
@@ -129,11 +146,13 @@ def when_invoke_lading_publish_allow_dirty(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
-
-    from .test_common_steps import _run_cli
-
-    _register_preflight_commands(cmd_mox, preflight_overrides)
-    return _run_cli(repo_root, workspace_directory, "publish", "--allow-dirty")
+    return _invoke_publish_with_options(
+        workspace_directory,
+        repo_root,
+        cmd_mox,
+        preflight_overrides,
+        "--allow-dirty",
+    )
 
 
 @given("cargo check fails during publish pre-flight")
