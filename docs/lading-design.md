@@ -380,43 +380,40 @@ involved to the operator. When `publish.order` is configured the planner
 validates that every publishable crate appears exactly once and that no unknown
 names are listed before returning the user-specified order.
 
-1. **Prepare Workspace Manifest**: Within the temporary clone of the
-   repository, determine the patch stripping strategy based on the
-   publish.strip_patches configuration and the execution mode (--dry-run flag).
+1. **Prepare Workspace Manifest**: Within the workspace root determine the
+   patch stripping strategy based on the publish.strip_patches configuration
+   and the execution mode (--dry-run flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
 2. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
-   a clean, temporary clone of the repository to ensure integrity:
+   the workspace itself to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
     - Run `cargo test --all-targets` for the entire workspace.
 
-    Implementation detail: the command now uses `shutil.copytree` to clone the
-    workspace into a temporary directory, skipping `.git` metadata and the
-    `target` directory to minimise copy time while still reproducing source
-    state. Both cargo commands run from inside the clone via `plumbum`, and any
-    non-zero exit aborts the workflow with the captured stderr. Before cloning
-    the repository, `git status --porcelain` verifies that the working tree is
-    clean; operators can pass `--allow-dirty` to bypass the cleanliness guard
-    when they intentionally want to exercise uncommitted changes. For testing
-    and controlled environments the helper honours the
-    `LADING_USE_CMD_MOX_STUB` environment variable: when set to a truthy value
-    (`1`, `true`, `yes`, or `on`) the pre-flight invocations contact the
-    cmd-mox IPC server instead of spawning real processes. Each subcommand is
-    encoded as `cargo::<name>` so that behavioural tests can record
-    expectations without interfering with the `cargo metadata` stub used
+    Implementation detail: the command executes both cargo subcommands via
+    `plumbum` directly in the workspace root so that any relative path
+    dependencies remain accessible. A preceding `git status --porcelain`
+    verifies that the working tree is clean; operators can pass `--allow-dirty`
+    to bypass the cleanliness guard when they intentionally want to exercise
+    uncommitted changes. For testing and controlled environments the helper
+    honours the `LADING_USE_CMD_MOX_STUB` environment variable: when set to a
+    truthy value (`1`, `true`, `yes`, or `on`) the pre-flight invocations
+    contact the cmd-mox IPC server instead of spawning real processes. Each
+    subcommand is encoded as `cargo::<name>` so that behavioural tests can
+    record expectations without interfering with the `cargo metadata` stub used
     elsewhere.
 
 3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the
-      current crate from the Cargo.toml in the temporary clone.
+      current crate from the Cargo.toml within the working tree snapshot being
+      prepared for packaging.
     - **README Handling:** If the crate has `readme.workspace = true`, copy the
-      workspace `README.md` into the crate's directory within the temporary
-      clone.
+      workspace `README.md` into the crate's directory prior to packaging.
     - **Package:** Run `cargo package` to create the `.crate` file and verify
       its contents.
     - **Publish:** Run `cargo publish`. If `--dry-run` is active (default

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses as dc
 import typing as typ
-from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
@@ -20,6 +19,10 @@ try:
     from cmd_mox import CmdMox
 except ModuleNotFoundError:
     CmdMox = typ.Any  # type: ignore[assignment]
+
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dc.dataclass(frozen=True, slots=True)

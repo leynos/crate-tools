@@ -127,16 +127,16 @@ Dry run; would update version to 1.2.3 in 3 manifest(s):
 `publish = false`, and prints a structured summary listing the crates that will
 be published. Additional sections document crates skipped by manifest flags or
 configuration, along with any exclusion entries that do not match a workspace
-crate. After building the plan, `publish` clones the workspace into a temporary
-directory and runs `cargo check --workspace --all-targets` followed by
-`cargo test --workspace --all-targets`. Both checks execute inside the clone so
-that the operator's working tree remains untouched. Any non-zero exit aborts
-the command with a descriptive error message.
+crate. After building the plan, `publish` validates the workspace by running
+`cargo check --workspace --all-targets` followed by
+`cargo test --workspace --all-targets` directly inside the workspace root. The
+commands execute after a `git status --porcelain` cleanliness check so that the
+pre-flight run sees the same files that would be published. Any non-zero exit
+aborts the command with a descriptive error message.
 
-The subcommand also performs a `git status --porcelain` check before creating
-the clone. If the working tree contains uncommitted changes the run halts with
-a reminder to clean up or to re-run with `--allow-dirty`. Passing the flag
-skips the cleanliness check while still running the cargo pre-flight commands.
+If the working tree contains uncommitted changes the run halts with a reminder
+to clean up or to re-run with `--allow-dirty`. Passing the flag skips the
+cleanliness check while still running the cargo pre-flight commands.
 
 ```bash
 python -m lading.cli --workspace-root /workspace/path publish

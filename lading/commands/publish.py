@@ -5,11 +5,7 @@ from __future__ import annotations
 import atexit
 import dataclasses as dc
 import os
-import shutil
-import tempfile
 import typing as typ
-from contextlib import contextmanager
-from pathlib import Path
 
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
@@ -17,6 +13,8 @@ from lading.workspace import WorkspaceDependencyCycleError
 from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
+    from pathlib import Path
+
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
@@ -584,9 +582,8 @@ def _run_preflight_checks(
         workspace_root, allow_dirty=allow_dirty, runner=command_runner
     )
 
-    with _workspace_clone(workspace_root) as clone_root:
-        _run_cargo_preflight(clone_root, "check", runner=command_runner)
-        _run_cargo_preflight(clone_root, "test", runner=command_runner)
+    _run_cargo_preflight(workspace_root, "check", runner=command_runner)
+    _run_cargo_preflight(workspace_root, "test", runner=command_runner)
 
 
 def _verify_clean_working_tree(
@@ -614,27 +611,12 @@ def _verify_clean_working_tree(
         raise PublishPreflightError(message)
 
 
-def _clone_workspace_for_checks(source: Path, destination: Path) -> None:
-    """Copy ``source`` into ``destination`` for isolated pre-flight checks."""
-    try:
-        shutil.copytree(
-            source,
-            destination,
-            symlinks=True,
-            ignore=shutil.ignore_patterns(".git", "target"),
-        )
-    except OSError as exc:  # pragma: no cover - defensive guard for filesystem issues
-        message = "Failed to clone workspace for pre-flight checks"
-        detail = f"{message}: {exc}"
-        raise PublishPreflightError(detail) from exc
-
-
 def _run_cargo_preflight(
-    clone_root: Path, subcommand: str, *, runner: _CommandRunner
+    workspace_root: Path, subcommand: str, *, runner: _CommandRunner
 ) -> None:
-    """Run ``cargo <subcommand>`` inside ``clone_root``."""
+    """Run ``cargo <subcommand>`` inside ``workspace_root``."""
     exit_code, stdout, stderr = runner(
-        ("cargo", subcommand, "--workspace", "--all-targets"), cwd=clone_root
+        ("cargo", subcommand, "--workspace", "--all-targets"), cwd=workspace_root
     )
     if exit_code != 0:
         detail = stderr.strip() or stdout.strip()
@@ -642,15 +624,6 @@ def _run_cargo_preflight(
         if detail:
             message = f"{message}: {detail}"
         raise PublishPreflightError(message)
-
-
-@contextmanager
-def _workspace_clone(source: Path) -> typ.Iterator[Path]:
-    """Yield a temporary workspace clone for running pre-flight checks."""
-    with tempfile.TemporaryDirectory(prefix="lading-publish-") as temp_dir:
-        clone_root = Path(temp_dir) / "workspace"
-        _clone_workspace_for_checks(source, clone_root)
-        yield clone_root
 
 
 def _invoke(

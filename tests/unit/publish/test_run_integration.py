@@ -168,24 +168,15 @@ def test_run_surfaces_configuration_errors(
     assert str(excinfo.value) == "invalid configuration"
 
 
-def test_run_executes_preflight_checks_in_clone(
+def test_run_executes_preflight_checks_in_workspace(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Pre-flight commands run inside an isolated workspace clone."""
+    """Pre-flight commands run inside the resolved workspace root."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config()
-
-    clone_paths: list[Path] = []
-
-    def fake_clone(source: Path, destination: Path) -> None:
-        assert source == root
-        destination.mkdir()
-        clone_paths.append(destination)
-
-    monkeypatch.setattr(publish, "_clone_workspace_for_checks", fake_clone)
 
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
@@ -199,16 +190,17 @@ def test_run_executes_preflight_checks_in_clone(
 
     publish.run(root, configuration, workspace)
 
-    assert clone_paths, "clone helper should have been invoked"
-    clone_root = clone_paths[0]
-    assert ("git", "status", "--porcelain") in {command for command, _cwd in calls}
+    assert (
+        ("git", "status", "--porcelain"),
+        root,
+    ) in calls
     assert (
         ("cargo", "check", "--workspace", "--all-targets"),
-        clone_root,
+        root,
     ) in calls
     assert (
         ("cargo", "test", "--workspace", "--all-targets"),
-        clone_root,
+        root,
     ) in calls
 
 
@@ -221,12 +213,6 @@ def test_run_raises_when_preflight_command_fails(
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config()
-
-    monkeypatch.setattr(
-        publish,
-        "_clone_workspace_for_checks",
-        lambda _source, destination: destination.mkdir(),
-    )
 
     def failing_invoke(
         command: typ.Sequence[str], *, cwd: Path | None = None
@@ -256,14 +242,6 @@ def test_allow_dirty_flag_skips_clean_check(
     root.mkdir()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     configuration = make_config()
-
-    clone_destinations: list[Path] = []
-
-    def fake_clone(source: Path, destination: Path) -> None:
-        destination.mkdir()
-        clone_destinations.append(destination)
-
-    monkeypatch.setattr(publish, "_clone_workspace_for_checks", fake_clone)
 
     def dirty_invoke(
         command: typ.Sequence[str], *, cwd: Path | None = None
@@ -298,13 +276,11 @@ def test_allow_dirty_flag_skips_clean_check(
     )
 
     assert message.startswith(f"Publish plan for {root}")
-    assert clone_destinations, "clone helper should still run with allow-dirty"
-    clone_root = clone_destinations[-1]
     assert (
         ("cargo", "check", "--workspace", "--all-targets"),
-        clone_root,
+        root,
     ) in calls
     assert (
         ("cargo", "test", "--workspace", "--all-targets"),
-        clone_root,
+        root,
     ) in calls
