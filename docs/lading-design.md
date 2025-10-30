@@ -323,7 +323,11 @@ lading bump <new_version> [--dry-run]
   before packaging. The staging directory must live outside the source tree to
   avoid recursive copies. Crates that opt into `readme.workspace = true` receive
   the root README within the staged workspace, and the CLI reports each copied
-  path so operators can confirm the assets that will be packaged.
+  path so operators can confirm the assets that will be packaged. Symbolic links
+  remain links by default to avoid cloning large external trees; callers can opt
+  into dereferencing by disabling `preserve_symlinks` via `PublishOptions`.
+  Likewise, `PublishOptions(cleanup=True)` registers an `atexit` hook that
+  removes the temporary build directory after the process exits.
 - Documentation rewrites honour `--dry-run`; the command reports the files but
   skips writing to disk. The CLI summary now reports both manifest and
   documentation counts, and documentation entries are suffixed with

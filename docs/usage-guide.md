@@ -165,7 +165,13 @@ directory before any packaging steps run. The CLI prints the location of this
 staging area so operators can inspect generated artifacts. Crates that declare
 `readme.workspace = true` receive a copy of the workspace `README.md` within the
 staged workspace. The summary lists each propagated README to confirm the files
-are ready for `cargo package`.
+are ready for `cargo package`. The staging copy preserves symbolic links by
+default so workspaces that link to external assets avoid recursively copying
+those directories. Programmatic callers can override this behaviour by passing
+``PublishOptions(preserve_symlinks=False)`` when invoking
+``lading.commands.publish.prepare_workspace``. When callers no longer need the
+staging tree they can opt into ``PublishOptions(cleanup=True)`` to remove the
+temporary directory automatically at process exit.
 
 ## Testing hooks
 

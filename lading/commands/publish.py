@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import dataclasses as dc
 import shutil
 import tempfile
@@ -46,6 +47,8 @@ class PublishOptions:
     """Configuration for publish command execution."""
 
     build_directory: Path | None = None
+    preserve_symlinks: bool = True
+    cleanup: bool = False
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -359,17 +362,24 @@ def _normalise_build_directory(
     candidate = candidate.resolve(strict=False)
 
     workspace_root = workspace_root.resolve(strict=True)
-    candidate_resolved = candidate
-    if candidate_resolved.is_relative_to(workspace_root):
+    if candidate.is_relative_to(workspace_root):
         message = "Publish build directory cannot reside within the workspace root"
         raise PublishPreparationError(message)
 
     candidate.mkdir(parents=True, exist_ok=True)
-    return candidate_resolved
+    return candidate
 
 
-def _copy_workspace_tree(workspace_root: Path, build_directory: Path) -> Path:
-    """Copy ``workspace_root`` into ``build_directory`` and return the clone."""
+def _copy_workspace_tree(
+    workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
+) -> Path:
+    """Copy ``workspace_root`` into ``build_directory`` and return the clone.
+
+    When ``preserve_symlinks`` is :data:`True`, the cloned tree keeps symbolic
+    links instead of dereferencing them. This avoids unexpectedly copying large
+    directories outside the workspace while still allowing callers to opt into
+    dereferencing if required.
+    """
     workspace_root = workspace_root.resolve(strict=True)
     staging_root = build_directory / workspace_root.name
     if staging_root.resolve(strict=False).is_relative_to(workspace_root):
@@ -377,7 +387,7 @@ def _copy_workspace_tree(workspace_root: Path, build_directory: Path) -> Path:
         raise PublishPreparationError(message)
     if staging_root.exists():
         shutil.rmtree(staging_root)
-    shutil.copytree(workspace_root, staging_root)
+    shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
     return staging_root
 
 
@@ -437,7 +447,11 @@ def prepare_workspace(
     build_directory = _normalise_build_directory(
         plan.workspace_root, active_options.build_directory
     )
-    staging_root = _copy_workspace_tree(plan.workspace_root, build_directory)
+    staging_root = _copy_workspace_tree(
+        plan.workspace_root,
+        build_directory,
+        preserve_symlinks=active_options.preserve_symlinks,
+    )
     readme_crates = _collect_workspace_readme_targets(workspace)
     copied_readmes = tuple(
         _stage_workspace_readmes(
@@ -446,7 +460,17 @@ def prepare_workspace(
             staging_root=staging_root,
         )
     )
-    return PublishPreparation(staging_root=staging_root, copied_readmes=copied_readmes)
+    preparation = PublishPreparation(
+        staging_root=staging_root, copied_readmes=copied_readmes
+    )
+    if active_options.cleanup:
+        build_root = staging_root.parent
+
+        def _cleanup() -> None:
+            shutil.rmtree(build_root, ignore_errors=True)
+
+        atexit.register(_cleanup)
+    return preparation
 
 
 def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:

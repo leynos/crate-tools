@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
+import typing as typ
 from pathlib import Path
 
 import pytest
+import tomlkit
 
 from lading import config as config_module
 from lading.commands import publish
@@ -16,6 +19,15 @@ from lading.workspace import (
 )
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _CrateSpec:
+    """Describe how a temporary workspace crate should be created."""
+
+    publish: bool = True
+    dependencies: tuple[WorkspaceDependency, ...] = ()
+    readme_workspace: bool = False
+
+
 def _make_config(**overrides: object) -> config_module.LadingConfig:
     """Return a configuration tailored for publish command tests."""
     publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
@@ -23,35 +35,37 @@ def _make_config(**overrides: object) -> config_module.LadingConfig:
 
 
 def _make_crate(
-    root: Path,
-    name: str,
-    *,
-    publish_flag: bool = True,
-    dependencies: tuple[WorkspaceDependency, ...] | None = None,
-    readme_flag: bool = False,
+    root: Path, name: str, spec: _CrateSpec | None = None
 ) -> WorkspaceCrate:
     """Construct a :class:`WorkspaceCrate` rooted under ``root``."""
+    active_spec = _CrateSpec() if spec is None else spec
+
     root.mkdir(parents=True, exist_ok=True)
     crate_root = root / name
     crate_root.mkdir(parents=True, exist_ok=True)
     manifest = crate_root / "Cargo.toml"
-    header_lines = [
-        "[package]",
-        f'name = "{name}"',
-        'version = "0.1.0"',
-    ]
-    if readme_flag:
-        header_lines.append("readme.workspace = true")
-    manifest.write_text("\n".join(header_lines) + "\n", encoding="utf-8")
+
+    package_table = tomlkit.table()
+    package_table.add("name", name)
+    package_table.add("version", "0.1.0")
+    if active_spec.readme_workspace:
+        readme_table = tomlkit.inline_table()
+        readme_table.update({"workspace": True})
+        package_table.add("readme", readme_table)
+
+    document = tomlkit.document()
+    document["package"] = package_table
+    manifest.write_text(tomlkit.dumps(document), encoding="utf-8")
+
     return WorkspaceCrate(
         id=f"{name}-id",
         name=name,
         version="0.1.0",
         manifest_path=manifest,
         root_path=crate_root,
-        publish=publish_flag,
-        readme_is_workspace=readme_flag,
-        dependencies=() if dependencies is None else dependencies,
+        publish=active_spec.publish,
+        readme_is_workspace=active_spec.readme_workspace,
+        dependencies=active_spec.dependencies,
     )
 
 
@@ -82,8 +96,16 @@ def _make_dependency_chain(
     operate on the same structure without duplicating setup code.
     """
     alpha = _make_crate(root, "alpha")
-    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
-    gamma = _make_crate(root, "gamma", dependencies=(_make_dependency("beta"),))
+    beta = _make_crate(
+        root,
+        "beta",
+        _CrateSpec(dependencies=(_make_dependency("alpha"),)),
+    )
+    gamma = _make_crate(
+        root,
+        "gamma",
+        _CrateSpec(dependencies=(_make_dependency("beta"),)),
+    )
     return alpha, beta, gamma
 
 
@@ -114,6 +136,12 @@ def _plan_with_crates(
     workspace = _make_workspace(root, *crates)
     configuration = _make_config(**config_overrides)
     return publish.plan_publication(workspace, configuration)
+
+
+@pytest.fixture
+def staging_root(tmp_path: Path) -> Path:
+    """Return a staging directory outside the workspace tree."""
+    return tmp_path.parent / f"{tmp_path.name}-staging"
 
 
 @pytest.mark.parametrize(
@@ -154,7 +182,7 @@ def test_plan_publication_filtering(
     """Planner splits crates into publishable and skipped groups."""
     root = tmp_path.resolve()
     crates = [
-        _make_crate(root, name, publish_flag=publish_flag)
+        _make_crate(root, name, _CrateSpec(publish=publish_flag))
         for name, publish_flag in crate_specs
     ]
     workspace = _make_workspace(root, *crates)
@@ -190,7 +218,7 @@ def test_plan_publication_empty_exclude_list(tmp_path: Path) -> None:
     """Configuration exclusions default to publishing all eligible crates."""
     root = tmp_path.resolve()
     publishable = _make_crate(root, "alpha")
-    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
+    manifest_skipped = _make_crate(root, "beta", _CrateSpec(publish=False))
     workspace = _make_workspace(root, publishable, manifest_skipped)
     configuration = _make_config(exclude=())
 
@@ -234,8 +262,8 @@ def test_plan_publication_sorts_crates_by_name(tmp_path: Path) -> None:
     root = tmp_path.resolve()
     publishable_second = _make_crate(root, "beta")
     publishable_first = _make_crate(root, "alpha")
-    manifest_skipped_late = _make_crate(root, "epsilon", publish_flag=False)
-    manifest_skipped_early = _make_crate(root, "delta", publish_flag=False)
+    manifest_skipped_late = _make_crate(root, "epsilon", _CrateSpec(publish=False))
+    manifest_skipped_early = _make_crate(root, "delta", _CrateSpec(publish=False))
     config_skipped_late = _make_crate(root, "theta")
     config_skipped_early = _make_crate(root, "gamma")
     workspace = _make_workspace(
@@ -285,19 +313,21 @@ def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
     alpha = _make_crate(
         root,
         "alpha",
-        dependencies=(
-            WorkspaceDependency(
-                package_id="beta-id",
-                name="beta",
-                manifest_name="beta",
-                kind="dev",
-            ),
+        _CrateSpec(
+            dependencies=(
+                WorkspaceDependency(
+                    package_id="beta-id",
+                    name="beta",
+                    manifest_name="beta",
+                    kind="dev",
+                ),
+            )
         ),
     )
     beta = _make_crate(
         root,
         "beta",
-        dependencies=(_make_dependency("alpha"),),
+        _CrateSpec(dependencies=(_make_dependency("alpha"),)),
     )
     workspace = _make_workspace(root, alpha, beta)
     configuration = _make_config()
@@ -310,8 +340,12 @@ def test_plan_publication_ignores_dev_dependency_cycles(tmp_path: Path) -> None:
 def test_plan_publication_detects_dependency_cycles(tmp_path: Path) -> None:
     """A dependency cycle raises an explicit planning error."""
     root = tmp_path.resolve()
-    alpha = _make_crate(root, "alpha", dependencies=(_make_dependency("beta"),))
-    beta = _make_crate(root, "beta", dependencies=(_make_dependency("alpha"),))
+    alpha = _make_crate(
+        root, "alpha", _CrateSpec(dependencies=(_make_dependency("beta"),))
+    )
+    beta = _make_crate(
+        root, "beta", _CrateSpec(dependencies=(_make_dependency("alpha"),))
+    )
     workspace = _make_workspace(root, alpha, beta)
     configuration = _make_config()
 
@@ -330,14 +364,12 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
     cycle_a = _make_crate(
         root,
         "cycle-a",
-        publish_flag=False,
-        dependencies=(_make_dependency("cycle-b"),),
+        _CrateSpec(publish=False, dependencies=(_make_dependency("cycle-b"),)),
     )
     cycle_b = _make_crate(
         root,
         "cycle-b",
-        publish_flag=False,
-        dependencies=(_make_dependency("cycle-a"),),
+        _CrateSpec(publish=False, dependencies=(_make_dependency("cycle-a"),)),
     )
 
     plan = _plan_with_crates(tmp_path, (alpha, cycle_a, cycle_b))
@@ -352,12 +384,12 @@ def test_plan_publication_configuration_skips_ignore_cycles(tmp_path: Path) -> N
     cycle_a = _make_crate(
         root,
         "cycle-a",
-        dependencies=(_make_dependency("cycle-b"),),
+        _CrateSpec(dependencies=(_make_dependency("cycle-b"),)),
     )
     cycle_b = _make_crate(
         root,
         "cycle-b",
-        dependencies=(_make_dependency("cycle-a"),),
+        _CrateSpec(dependencies=(_make_dependency("cycle-a"),)),
     )
 
     plan = _plan_with_crates(
@@ -421,7 +453,7 @@ def test_plan_publication_rejects_unknown_configured_crates(tmp_path: Path) -> N
 
 
 def test_run_normalises_workspace_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, staging_root: Path
 ) -> None:
     """The run helper resolves the workspace root before planning."""
     workspace = Path("workspace")
@@ -438,14 +470,14 @@ def test_run_normalises_workspace_root(
     output = publish.run(
         workspace,
         configuration,
-        options=publish.PublishOptions(build_directory=tmp_path / "staging"),
+        options=publish.PublishOptions(build_directory=staging_root),
     )
 
     assert output.splitlines()[0] == f"Publish plan for {resolved}"
 
 
 def test_run_uses_active_configuration(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, staging_root: Path
 ) -> None:
     """``run`` falls back to :func:`current_configuration` when needed."""
     configuration = _make_config(exclude=("skip-me",))
@@ -454,7 +486,6 @@ def test_run_uses_active_configuration(
     workspace = _make_workspace(root, _make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
 
-    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
     output = publish.run(
         tmp_path, options=publish.PublishOptions(build_directory=staging_root)
     )
@@ -463,7 +494,7 @@ def test_run_uses_active_configuration(
 
 
 def test_run_loads_configuration_when_inactive(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, staging_root: Path
 ) -> None:
     """``run`` loads configuration from disk if no active configuration exists."""
     root = tmp_path.resolve()
@@ -483,7 +514,6 @@ def test_run_loads_configuration_when_inactive(
     monkeypatch.setattr(config_module, "current_configuration", raise_not_loaded)
     monkeypatch.setattr(config_module, "load_configuration", capture_load)
 
-    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
     output = publish.run(
         root, options=publish.PublishOptions(build_directory=staging_root)
     )
@@ -492,16 +522,15 @@ def test_run_loads_configuration_when_inactive(
     assert load_calls == [root]
 
 
-def test_run_formats_plan_summary(tmp_path: Path) -> None:
+def test_run_formats_plan_summary(tmp_path: Path, staging_root: Path) -> None:
     """``run`` returns a structured summary of the publish plan."""
     root = tmp_path.resolve()
     publishable = _make_crate(root, "alpha")
-    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
+    manifest_skipped = _make_crate(root, "beta", _CrateSpec(publish=False))
     config_skipped = _make_crate(root, "gamma")
     workspace = _make_workspace(root, publishable, manifest_skipped, config_skipped)
     configuration = _make_config(exclude=("gamma", "missing"))
 
-    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
     message = publish.run(
         root,
         configuration,
@@ -523,10 +552,10 @@ def test_run_formats_plan_summary(tmp_path: Path) -> None:
     assert "Copied workspace README to: none required" in lines
 
 
-def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
+def test_run_reports_no_publishable_crates(tmp_path: Path, staging_root: Path) -> None:
     """``run`` highlights when no crates are eligible for publication."""
     root = tmp_path.resolve()
-    manifest_skipped = _make_crate(root, "alpha", publish_flag=False)
+    manifest_skipped = _make_crate(root, "alpha", _CrateSpec(publish=False))
     config_skipped_first = _make_crate(root, "beta")
     config_skipped_second = _make_crate(root, "gamma")
     workspace = _make_workspace(
@@ -534,7 +563,6 @@ def test_run_reports_no_publishable_crates(tmp_path: Path) -> None:
     )
     configuration = _make_config(exclude=("beta", "gamma"))
 
-    staging_root = tmp_path.parent / f"{tmp_path.name}-staging"
     message = publish.run(
         root,
         configuration,
@@ -636,7 +664,7 @@ def test_append_section_omits_header_for_empty_sequences() -> None:
 def test_format_plan_formats_skipped_sections(tmp_path: Path) -> None:
     """``_format_plan`` renders skipped crates using their names only."""
     root = tmp_path.resolve()
-    manifest_skipped = _make_crate(root, "beta", publish_flag=False)
+    manifest_skipped = _make_crate(root, "beta", _CrateSpec(publish=False))
     config_skipped = _make_crate(root, "gamma")
     plan = publish.PublishPlan(
         workspace_root=root,
@@ -716,7 +744,9 @@ def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
     build_directory = tmp_path / "staging"
     build_directory.mkdir()
 
-    staging_root = publish._copy_workspace_tree(workspace_root, build_directory)
+    staging_root = publish._copy_workspace_tree(
+        workspace_root, build_directory, preserve_symlinks=True
+    )
 
     assert staging_root == build_directory / workspace_root.name
     assert (staging_root / "Cargo.toml").read_text(encoding="utf-8") == "[workspace]\n"
@@ -737,7 +767,9 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     stale_file = existing_clone / "stale.txt"
     stale_file.write_text("stale", encoding="utf-8")
 
-    staging_root = publish._copy_workspace_tree(workspace_root, build_directory)
+    staging_root = publish._copy_workspace_tree(
+        workspace_root, build_directory, preserve_symlinks=True
+    )
 
     assert staging_root == existing_clone
     assert not stale_file.exists()
@@ -750,9 +782,55 @@ def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
     workspace_root.mkdir()
 
     with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._copy_workspace_tree(workspace_root, workspace_root)
+        publish._copy_workspace_tree(
+            workspace_root, workspace_root, preserve_symlinks=True
+        )
 
     assert "cannot be nested inside the workspace root" in str(excinfo.value)
+
+
+def test_copy_workspace_tree_preserves_symlinks(tmp_path: Path) -> None:
+    """Workspace symlinks remain symlinks when preservation is enabled."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "data.txt"
+    target.write_text("payload", encoding="utf-8")
+    link = workspace_root / "alias.txt"
+    link.symlink_to(target.name)
+
+    build_directory = tmp_path / "staging"
+    build_directory.mkdir()
+
+    staging_root = publish._copy_workspace_tree(
+        workspace_root, build_directory, preserve_symlinks=True
+    )
+
+    staged_link = staging_root / "alias.txt"
+    assert staged_link.is_symlink()
+    assert staged_link.resolve(strict=True) == staging_root / "data.txt"
+    assert staged_link.read_text(encoding="utf-8") == "payload"
+
+
+def test_copy_workspace_tree_dereferences_symlinks(tmp_path: Path) -> None:
+    """Symlinks become regular files when preservation is disabled."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    target = workspace_root / "data.txt"
+    target.write_text("payload", encoding="utf-8")
+    link = workspace_root / "alias.txt"
+    link.symlink_to(target.name)
+
+    build_directory = tmp_path / "staging"
+    build_directory.mkdir()
+
+    staging_root = publish._copy_workspace_tree(
+        workspace_root, build_directory, preserve_symlinks=False
+    )
+
+    staged_link = staging_root / "alias.txt"
+    assert staged_link.is_file()
+    assert not staged_link.is_symlink()
+    assert staged_link.read_text(encoding="utf-8") == "payload"
 
 
 def test_stage_workspace_readmes_returns_empty_list_when_unused(
@@ -777,8 +855,10 @@ def test_stage_workspace_readmes_copies_and_sorts_targets(tmp_path: Path) -> Non
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
     readme.write_text("workspace", encoding="utf-8")
-    crate_alpha = _make_crate(workspace_root, "alpha", readme_flag=True)
-    crate_beta = _make_crate(workspace_root, "beta", readme_flag=True)
+    crate_alpha = _make_crate(
+        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
+    )
+    crate_beta = _make_crate(workspace_root, "beta", _CrateSpec(readme_workspace=True))
     staging_root = tmp_path / "staging" / "workspace"
     staging_root.mkdir(parents=True)
 
@@ -798,7 +878,7 @@ def test_stage_workspace_readmes_requires_workspace_readme(tmp_path: Path) -> No
     """Crates requesting the workspace README require the source file."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    crate = _make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
 
@@ -818,7 +898,7 @@ def test_stage_workspace_readmes_rejects_external_crates(tmp_path: Path) -> None
     readme.write_text("workspace", encoding="utf-8")
 
     external_root = tmp_path / "external"
-    crate = _make_crate(external_root, "alpha", readme_flag=True)
+    crate = _make_crate(external_root, "alpha", _CrateSpec(readme_workspace=True))
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
 
@@ -890,7 +970,7 @@ def test_prepare_workspace_copies_workspace_readme(tmp_path: Path) -> None:
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
     readme.write_text("Workspace README", encoding="utf-8")
-    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    crate = _make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
     workspace = _make_workspace(workspace_root, crate)
     configuration = _make_config()
     plan = publish.plan_publication(workspace, configuration)
@@ -914,7 +994,7 @@ def test_prepare_workspace_requires_workspace_readme(tmp_path: Path) -> None:
     """Staging fails fast when crates expect the workspace README."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = _make_crate(workspace_root, "alpha", readme_flag=True)
+    crate = _make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
     workspace = _make_workspace(workspace_root, crate)
     configuration = _make_config()
     plan = publish.plan_publication(workspace, configuration)
@@ -927,3 +1007,34 @@ def test_prepare_workspace_requires_workspace_readme(tmp_path: Path) -> None:
         )
 
     assert "README.md" in str(excinfo.value)
+
+
+def test_prepare_workspace_registers_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cleanup-enabled staging registers an atexit handler."""
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = _make_crate(workspace_root, "alpha")
+    workspace = _make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, _make_config())
+
+    build_directory = tmp_path / "staging"
+    registered: list[object] = []
+
+    def capture(callback: typ.Callable[[], None]) -> None:
+        registered.append(callback)
+
+    monkeypatch.setattr(publish.atexit, "register", capture)
+
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=True)
+    preparation = publish.prepare_workspace(plan, workspace, options=options)
+
+    assert len(registered) == 1
+    cleanup = registered[0]
+    assert callable(cleanup)
+    assert preparation.staging_root.parent == build_directory
+    assert build_directory.exists()
+
+    cleanup()
+    assert not build_directory.exists()
