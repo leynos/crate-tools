@@ -2,28 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
+import typing as typ
 
 import pytest
 
 from lading import config as config_module
 from lading.commands import publish
 from lading.workspace import WorkspaceCrate, WorkspaceGraph, WorkspaceModelError
-
 from tests.unit.conftest import _CrateSpec
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_run_normalises_workspace_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    staging_root: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """The run helper resolves the workspace root before planning."""
-
-    workspace = Path("workspace")
+    workspace = "workspace"
     monkeypatch.chdir(tmp_path)
     resolved = tmp_path / "workspace"
     plan_workspace = make_workspace(resolved)
@@ -34,11 +34,7 @@ def test_run_normalises_workspace_root(
         return plan_workspace
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
-    output = publish.run(
-        workspace,
-        configuration,
-        options=publish.PublishOptions(build_directory=staging_root),
-    )
+    output = publish.run(workspace, configuration, options=publish_options)
 
     assert output.splitlines()[0] == f"Publish plan for {resolved}"
 
@@ -46,22 +42,19 @@ def test_run_normalises_workspace_root(
 def test_run_uses_active_configuration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    staging_root: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """``run`` falls back to :func:`current_configuration` when needed."""
-
     configuration = make_config(exclude=("skip-me",))
     monkeypatch.setattr(config_module, "current_configuration", lambda: configuration)
     root = tmp_path.resolve()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
 
-    output = publish.run(
-        tmp_path, options=publish.PublishOptions(build_directory=staging_root)
-    )
+    output = publish.run(tmp_path, options=publish_options)
 
     assert "skip-me" in output
 
@@ -69,13 +62,12 @@ def test_run_uses_active_configuration(
 def test_run_loads_configuration_when_inactive(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    staging_root: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """``run`` loads configuration from disk if no active configuration exists."""
-
     root = tmp_path.resolve()
     workspace = make_workspace(root, make_crate(root, "alpha"))
     monkeypatch.setattr("lading.workspace.load_workspace", lambda _: workspace)
@@ -93,9 +85,7 @@ def test_run_loads_configuration_when_inactive(
     monkeypatch.setattr(config_module, "current_configuration", raise_not_loaded)
     monkeypatch.setattr(config_module, "load_configuration", capture_load)
 
-    output = publish.run(
-        root, options=publish.PublishOptions(build_directory=staging_root)
-    )
+    output = publish.run(root, options=publish_options)
 
     assert "Crates to publish" in output
     assert load_calls == [root]
@@ -103,13 +93,12 @@ def test_run_loads_configuration_when_inactive(
 
 def test_run_formats_plan_summary(
     tmp_path: Path,
-    staging_root: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """``run`` returns a structured summary of the publish plan."""
-
     root = tmp_path.resolve()
     publishable = make_crate(root, "alpha")
     manifest_skipped = make_crate(root, "beta", _CrateSpec(publish=False))
@@ -121,7 +110,7 @@ def test_run_formats_plan_summary(
         root,
         configuration,
         workspace,
-        options=publish.PublishOptions(build_directory=staging_root),
+        options=publish_options,
     )
 
     lines = message.splitlines()
@@ -140,13 +129,12 @@ def test_run_formats_plan_summary(
 
 def test_run_reports_no_publishable_crates(
     tmp_path: Path,
-    staging_root: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """``run`` highlights when no crates are eligible for publication."""
-
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "alpha", _CrateSpec(publish=False))
     config_skipped_first = make_crate(root, "beta")
@@ -160,7 +148,7 @@ def test_run_reports_no_publishable_crates(
         root,
         configuration,
         workspace,
-        options=publish.PublishOptions(build_directory=staging_root),
+        options=publish_options,
     )
 
     lines = message.splitlines()
@@ -177,10 +165,9 @@ def test_run_reports_no_publishable_crates(
 def test_run_surfaces_missing_workspace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    make_config: Callable[..., config_module.LadingConfig],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """``run`` converts missing workspace roots into workspace model errors."""
-
     configuration = make_config()
 
     def raise_missing(_: Path) -> WorkspaceGraph:
@@ -200,7 +187,7 @@ def test_run_surfaces_missing_workspace(
 def test_run_surfaces_configuration_errors(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    make_config: Callable[..., config_module.LadingConfig],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """``run`` propagates configuration errors encountered while loading."""
 

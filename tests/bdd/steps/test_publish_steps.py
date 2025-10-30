@@ -69,6 +69,15 @@ def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
 
 
+def _extract_staging_root_from_plan(lines: list[str]) -> Path:
+    """Return the staging root path parsed from publish plan ``lines``."""
+    staging_line = next(
+        (line for line in lines if line.startswith("Staged workspace at:")), None
+    )
+    assert staging_line is not None
+    return Path(staging_line.split(": ", 1)[1])
+
+
 @then(
     parsers.parse('the publish command reports manifest-skipped crate "{crate_name}"')
 )
@@ -147,12 +156,7 @@ def then_publish_staging_contains_readme(
 ) -> None:
     """Assert that staging propagated the workspace README into ``crate_name``."""
     lines = _publish_plan_lines(cli_run)
-    staging_line = next(
-        (line for line in lines if line.startswith("Staged workspace at:")),
-        None,
-    )
-    assert staging_line is not None
-    staging_root = Path(staging_line.partition(": ")[2])
+    staging_root = _extract_staging_root_from_plan(lines)
     staged_readme = staging_root / "crates" / crate_name / "README.md"
     assert staged_readme.exists()
 
@@ -162,3 +166,24 @@ def then_publish_staging_contains_readme(
     assert staged_readme.read_text(encoding="utf-8") == source_readme.read_text(
         encoding="utf-8"
     )
+
+
+@then(
+    parsers.parse(
+        'the publish plan lists copied workspace README for crate "{crate_name}"'
+    )
+)
+def then_publish_lists_copied_readme(
+    cli_run: dict[str, typ.Any], crate_name: str
+) -> None:
+    """Assert that the publish plan lists the staged README for ``crate_name``."""
+    lines = _publish_plan_lines(cli_run)
+    staging_root = _extract_staging_root_from_plan(lines)
+    expected_relative = Path("crates") / crate_name / "README.md"
+    expected_entry = f"- {expected_relative.as_posix()}"
+    assert expected_entry in lines
+
+    # The formatting helper reports relative paths when possible, so verify
+    # that the corresponding staged README exists where the CLI claims.
+    staged_readme = staging_root / expected_relative
+    assert staged_readme.exists()

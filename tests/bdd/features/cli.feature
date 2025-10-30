@@ -67,6 +67,7 @@ Feature: Lading CLI scaffolding
     When I invoke lading publish with that workspace
     Then the publish command prints the publish plan for "alpha"
     And the publish staging directory for crate "alpha" contains the workspace README
+    And the publish plan lists copied workspace README for crate "alpha"
 
   Scenario: Publish command errors when workspace README is missing
     Given a workspace directory with configuration

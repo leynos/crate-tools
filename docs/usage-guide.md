@@ -111,8 +111,7 @@ manifest and documentation counts. When every manifest already records the
 requested version, the CLI reports: `No manifest changes required; all versions
 already 1.2.3.`
 
-Pass `--dry-run` to preview the same summary without writing to disk.
-Example:
+Pass `--dry-run` to preview the same summary without writing to disk. Example:
 
 ```text
 Dry run; would update version to 1.2.3 in 3 manifest(s):
@@ -151,10 +150,10 @@ Copied workspace README to:
 The publish plan sorts crates so that internal dependencies appear before the
 crates that rely on them. The deterministic order is calculated with a
 topological sort over the workspace graph. If the workspace defines
-`publish.order` in `lading.toml`, that explicit list takes precedence once it is
-validated for missing, duplicate, or unknown crate names. Any dependency cycles
-are reported as errors so that release engineers can fix their manifests before
-continuing.
+`publish.order` in `lading.toml`, that explicit list takes precedence once it
+is validated for missing, duplicate, or unknown crate names. Any dependency
+cycles are reported as errors so that release engineers can fix their manifests
+before continuing.
 
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
@@ -163,10 +162,10 @@ reasons for skipping crates visible to the operator.
 The preparation phase now clones the entire workspace into a temporary build
 directory before any packaging steps run. The CLI prints the location of this
 staging area so operators can inspect generated artifacts. Crates that declare
-`readme.workspace = true` receive a copy of the workspace `README.md` within the
-staged workspace. The summary lists each propagated README to confirm the files
-are ready for `cargo package`. The staging copy preserves symbolic links by
-default so workspaces that link to external assets avoid recursively copying
+`readme.workspace = true` receive a copy of the workspace `README.md` within
+the staged workspace. The summary lists each propagated README to confirm the
+files are ready for `cargo package`. The staging copy preserves symbolic links
+by default so workspaces that link to external assets avoid recursively copying
 those directories. Programmatic callers can override this behaviour by passing
 ``PublishOptions(preserve_symlinks=False)`` when invoking
 ``lading.commands.publish.prepare_workspace``. When callers no longer need the

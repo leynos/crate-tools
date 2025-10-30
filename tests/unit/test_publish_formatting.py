@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
-
-import pytest
+import typing as typ
 
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate
-
 from tests.unit.conftest import _CrateSpec
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from lading.workspace import WorkspaceCrate
 
 
 def test_append_section_appends_formatted_items() -> None:
@@ -35,7 +35,6 @@ def test_append_section_appends_formatted_items() -> None:
 
 def test_append_section_defaults_to_string_conversion() -> None:
     """Default formatter handles simple string values without boilerplate."""
-
     lines: list[str] = []
 
     publish._append_section(lines, ("alpha", "beta"), header="Header:")
@@ -45,7 +44,6 @@ def test_append_section_defaults_to_string_conversion() -> None:
 
 def test_append_section_omits_header_for_empty_sequences() -> None:
     """Helper leaves ``lines`` unchanged when there is nothing to report."""
-
     lines = ["prefix"]
 
     publish._append_section(lines, (), header="Header:")
@@ -55,10 +53,9 @@ def test_append_section_omits_header_for_empty_sequences() -> None:
 
 def test_format_plan_formats_skipped_sections(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """``_format_plan`` renders skipped crates using their names only."""
-
     root = tmp_path.resolve()
     manifest_skipped = make_crate(root, "beta", _CrateSpec(publish=False))
     config_skipped = make_crate(root, "gamma")
@@ -82,9 +79,10 @@ def test_format_plan_formats_skipped_sections(
     assert lines[missing_index + 1] == "- missing"
 
 
-def test_format_preparation_summary_lists_copied_readmes(tmp_path: Path) -> None:
+def test_format_preparation_summary_lists_copied_readmes(
+    tmp_path: Path,
+) -> None:
     """Summary includes relative README paths when copies exist."""
-
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
     readme_alpha = staging_root / "crates" / "alpha" / "README.md"
@@ -104,9 +102,10 @@ def test_format_preparation_summary_lists_copied_readmes(tmp_path: Path) -> None
     assert "- crates/beta/README.md" in lines
 
 
-def test_format_preparation_summary_handles_external_paths(tmp_path: Path) -> None:
+def test_format_preparation_summary_handles_external_paths(
+    tmp_path: Path,
+) -> None:
     """Summary falls back to absolute paths when not under the staging root."""
-
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
     external_readme = tmp_path.parent / "external-readme.md"
@@ -122,9 +121,10 @@ def test_format_preparation_summary_handles_external_paths(tmp_path: Path) -> No
     assert f"- {external_readme}" in lines
 
 
-def test_format_preparation_summary_reports_absence(tmp_path: Path) -> None:
+def test_format_preparation_summary_reports_absence(
+    tmp_path: Path,
+) -> None:
     """Summary highlights when no README copies were required."""
-
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
     preparation = publish.PublishPreparation(

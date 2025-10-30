@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
+import typing as typ
 
 import pytest
 
-from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate, WorkspaceGraph
-
 from tests.unit.conftest import _CrateSpec
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from lading import config as config_module
+    from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
 def test_normalise_build_directory_defaults_to_tempdir(tmp_path: Path) -> None:
     """Normalisation creates a temporary directory when none is provided."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
@@ -31,14 +32,11 @@ def test_normalise_build_directory_resolves_relative_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Relative build directories are resolved against the current directory."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     monkeypatch.chdir(tmp_path)
 
-    build_directory = publish._normalise_build_directory(
-        workspace_root, Path("staging")
-    )
+    build_directory = publish._normalise_build_directory(workspace_root, "staging")
 
     expected = (tmp_path / "staging").resolve()
     assert build_directory == expected
@@ -49,7 +47,6 @@ def test_normalise_build_directory_rejects_workspace_descendants(
     tmp_path: Path,
 ) -> None:
     """Normalisation rejects build directories nested under the workspace."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
@@ -63,7 +60,6 @@ def test_normalise_build_directory_rejects_workspace_descendants(
 
 def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
     """Workspace files are cloned into the staging directory."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     manifest = workspace_root / "Cargo.toml"
@@ -89,7 +85,6 @@ def test_copy_workspace_tree_mirrors_workspace_contents(tmp_path: Path) -> None:
 
 def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
     """Existing staging directories are replaced with a fresh copy."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     (workspace_root / "marker.txt").write_text("fresh", encoding="utf-8")
@@ -111,7 +106,6 @@ def test_copy_workspace_tree_replaces_existing_clone(tmp_path: Path) -> None:
 
 def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
     """Copying into a directory under the workspace is prohibited."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
 
@@ -125,7 +119,6 @@ def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
 
 def test_copy_workspace_tree_preserves_symlinks(tmp_path: Path) -> None:
     """Workspace symlinks remain symlinks when preservation is enabled."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     target = workspace_root / "data.txt"
@@ -148,7 +141,6 @@ def test_copy_workspace_tree_preserves_symlinks(tmp_path: Path) -> None:
 
 def test_copy_workspace_tree_dereferences_symlinks(tmp_path: Path) -> None:
     """Symlinks become regular files when preservation is disabled."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     target = workspace_root / "data.txt"
@@ -173,7 +165,6 @@ def test_stage_workspace_readmes_returns_empty_list_when_unused(
     tmp_path: Path,
 ) -> None:
     """No work is performed when no crates opt into the workspace README."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     staging_root = tmp_path / "staging"
@@ -183,15 +174,14 @@ def test_stage_workspace_readmes_returns_empty_list_when_unused(
         crates=(), workspace_root=workspace_root, staging_root=staging_root
     )
 
-    assert copied == []
+    assert copied == ()
 
 
 def test_stage_workspace_readmes_copies_and_sorts_targets(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """Workspace README is copied into each opted-in crate in sorted order."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
@@ -215,10 +205,9 @@ def test_stage_workspace_readmes_copies_and_sorts_targets(
 
 def test_stage_workspace_readmes_requires_workspace_readme(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """Crates requesting the workspace README require the source file."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     crate = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
@@ -235,10 +224,9 @@ def test_stage_workspace_readmes_requires_workspace_readme(
 
 def test_stage_workspace_readmes_rejects_external_crates(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
 ) -> None:
     """Crates outside the workspace cannot receive the workspace README."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
@@ -259,12 +247,12 @@ def test_stage_workspace_readmes_rejects_external_crates(
 
 def test_prepare_workspace_copies_workspace_readme(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    publish_options: publish.PublishOptions,
 ) -> None:
     """Staging copies the workspace README into crates that opt in."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
@@ -273,9 +261,7 @@ def test_prepare_workspace_copies_workspace_readme(
     workspace = make_workspace(workspace_root, crate)
     configuration = make_config()
     plan = publish.plan_publication(workspace, configuration)
-    options = publish.PublishOptions(build_directory=tmp_path / "staging")
-
-    preparation = publish.prepare_workspace(plan, workspace, options=options)
+    preparation = publish.prepare_workspace(plan, workspace, options=publish_options)
 
     staging_root = preparation.staging_root
     assert staging_root.exists()
@@ -286,17 +272,16 @@ def test_prepare_workspace_copies_workspace_readme(
     assert staged_readme.read_text(encoding="utf-8") == readme.read_text(
         encoding="utf-8"
     )
-    assert staged_readme in preparation.copied_readmes
+    assert preparation.copied_readmes == (staged_readme,)
 
 
 def test_prepare_workspace_requires_workspace_readme(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Staging fails fast when crates expect the workspace README."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     crate = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
@@ -317,12 +302,11 @@ def test_prepare_workspace_requires_workspace_readme(
 def test_prepare_workspace_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Cleanup-enabled staging registers an atexit handler."""
-
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     crate = make_crate(workspace_root, "alpha")
@@ -330,9 +314,9 @@ def test_prepare_workspace_registers_cleanup(
     plan = publish.plan_publication(workspace, make_config())
 
     build_directory = tmp_path / "staging"
-    registered: list[Callable[[], None]] = []
+    registered: list[typ.Callable[[], None]] = []
 
-    def capture(callback: Callable[[], None]) -> None:
+    def capture(callback: typ.Callable[[], None]) -> None:
         registered.append(callback)
 
     monkeypatch.setattr(publish.atexit, "register", capture)

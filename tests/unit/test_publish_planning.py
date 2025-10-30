@@ -2,27 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from pathlib import Path
+import typing as typ
 
 import pytest
 
-from lading import config as config_module
 from lading.commands import publish
-from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
-
 from tests.unit.conftest import _CrateSpec
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
+
+    from lading import config as config_module
+    from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 
 def _plan_with_crates(
     tmp_path: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
     crates: tuple[WorkspaceCrate, ...],
     **config_overrides: object,
 ) -> publish.PublishPlan:
     """Plan publication for ``crates`` using ``tmp_path`` as the workspace root."""
-
     root = tmp_path.resolve()
     workspace = make_workspace(root, *crates)
     configuration = make_config(**config_overrides)
@@ -32,11 +33,10 @@ def _plan_with_crates(
 def _make_dependency_chain(
     root: Path,
     *,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> tuple[WorkspaceCrate, WorkspaceCrate, WorkspaceCrate]:
     """Return crates that form a simple alpha→beta→gamma dependency chain."""
-
     alpha = make_crate(root, "alpha")
     beta = make_crate(
         root,
@@ -85,12 +85,11 @@ def test_plan_publication_filtering(
     crate_specs: list[tuple[str, bool]],
     exclude: list[str],
     expected: dict[str, tuple[str, ...]],
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
-
     root = tmp_path.resolve()
     crates = [
         make_crate(root, name, _CrateSpec(publish=publish_flag))
@@ -114,9 +113,10 @@ def test_plan_publication_filtering(
 
 def test_plan_publication_empty_workspace(
     tmp_path: Path,
-    make_config: Callable[..., config_module.LadingConfig],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Planner returns empty results when the workspace has no crates."""
+    from lading.workspace import WorkspaceGraph
 
     root = tmp_path.resolve()
     workspace = WorkspaceGraph(workspace_root=root, crates=())
@@ -131,17 +131,16 @@ def test_plan_publication_empty_workspace(
 
 def test_plan_publication_empty_exclude_list(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Configuration exclusions default to publishing all eligible crates."""
-
     root = tmp_path.resolve()
     publishable = make_crate(root, "alpha")
     manifest_skipped = make_crate(root, "beta", _CrateSpec(publish=False))
     workspace = make_workspace(root, publishable, manifest_skipped)
-    configuration = make_config(exclude=tuple())
+    configuration = make_config(exclude=())
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -152,11 +151,10 @@ def test_plan_publication_empty_exclude_list(
 
 def test_plan_publication_records_missing_exclusions(
     tmp_path: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Unknown entries in publish.exclude are reported in the plan."""
-
     root = tmp_path.resolve()
     workspace = make_workspace(root)
     configuration = make_config(exclude=("missing",))
@@ -168,11 +166,10 @@ def test_plan_publication_records_missing_exclusions(
 
 def test_plan_publication_records_multiple_missing_exclusions(
     tmp_path: Path,
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Multiple unmatched exclusions are surfaced in configuration order."""
-
     root = tmp_path.resolve()
     workspace = make_workspace(root)
     configuration = make_config(exclude=("missing1", "missing2", "missing3"))
@@ -188,12 +185,11 @@ def test_plan_publication_records_multiple_missing_exclusions(
 
 def test_plan_publication_sorts_crates_by_name(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Publishable and skipped crates appear in deterministic alphabetical order."""
-
     root = tmp_path.resolve()
     publishable_second = make_crate(root, "beta")
     publishable_first = make_crate(root, "alpha")
@@ -221,12 +217,11 @@ def test_plan_publication_sorts_crates_by_name(
 
 def test_plan_publication_multiple_configuration_skips(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """All configuration exclusions appear in the skipped configuration list."""
-
     root = tmp_path.resolve()
     gamma = make_crate(root, "gamma")
     delta = make_crate(root, "delta")
@@ -241,13 +236,12 @@ def test_plan_publication_multiple_configuration_skips(
 
 def test_plan_publication_topologically_orders_dependencies(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Crates are sorted so that dependencies publish before their dependents."""
-
     root = tmp_path.resolve()
     alpha, beta, gamma = _make_dependency_chain(
         root, make_crate=make_crate, make_dependency=make_dependency
@@ -265,12 +259,13 @@ def test_plan_publication_topologically_orders_dependencies(
 
 def test_plan_publication_ignores_dev_dependency_cycles(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
-    make_dependency: Callable[[str], WorkspaceDependency],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> None:
     """Dev-only dependency edges do not create publish-order cycles."""
+    from lading.workspace import WorkspaceDependency
 
     root = tmp_path.resolve()
     alpha = make_crate(
@@ -302,13 +297,12 @@ def test_plan_publication_ignores_dev_dependency_cycles(
 
 def test_plan_publication_detects_dependency_cycles(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
-    make_dependency: Callable[[str], WorkspaceDependency],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> None:
     """A dependency cycle raises an explicit planning error."""
-
     root = tmp_path.resolve()
     alpha = make_crate(
         root, "alpha", _CrateSpec(dependencies=(make_dependency("beta"),))
@@ -327,13 +321,12 @@ def test_plan_publication_detects_dependency_cycles(
 
 def test_plan_publication_ignores_cycles_in_non_publishable_crates(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Cycles among skipped crates do not block eligible publishable crates."""
-
     root = tmp_path.resolve()
     alpha = make_crate(root, "alpha")
     cycle_a = make_crate(
@@ -359,13 +352,12 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
 
 def test_plan_publication_configuration_skips_ignore_cycles(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Configuration exclusions bypass cycles outside publishable crates."""
-
     root = tmp_path.resolve()
     alpha = make_crate(root, "alpha")
     cycle_a = make_crate(
@@ -392,13 +384,12 @@ def test_plan_publication_configuration_skips_ignore_cycles(
 
 def test_plan_publication_honours_configured_order(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
-
     alpha, beta, gamma = _make_dependency_chain(
         tmp_path.resolve(),
         make_crate=make_crate,
@@ -418,12 +409,11 @@ def test_plan_publication_honours_configured_order(
 
 def test_plan_publication_rejects_incomplete_configured_order(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Missing crates in publish.order surface a descriptive validation error."""
-
     root = tmp_path.resolve()
     alpha = make_crate(root, "alpha")
     beta = make_crate(root, "beta")
@@ -440,13 +430,12 @@ def test_plan_publication_rejects_incomplete_configured_order(
 
 def test_plan_publication_rejects_duplicate_configured_crates(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Repeated publish.order entries raise a duplicate configuration error."""
-
     alpha, _, _ = _make_dependency_chain(
         tmp_path.resolve(),
         make_crate=make_crate,
@@ -467,13 +456,12 @@ def test_plan_publication_rejects_duplicate_configured_crates(
 
 def test_plan_publication_rejects_unknown_configured_crates(
     tmp_path: Path,
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_dependency: Callable[[str], WorkspaceDependency],
-    make_workspace: Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: Callable[..., config_module.LadingConfig],
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Names outside the publishable set trigger an informative error."""
-
     alpha, _, _ = _make_dependency_chain(
         tmp_path.resolve(),
         make_crate=make_crate,

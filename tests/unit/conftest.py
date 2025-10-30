@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import dataclasses as dc
-from collections.abc import Callable
-from pathlib import Path
-from typing import Any
+import typing as typ
 
 import pytest
 import tomlkit
 
 from lading import config as config_module
+from lading.commands import publish
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
+
+if typ.TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -24,10 +26,10 @@ class _CrateSpec:
 
 
 @pytest.fixture
-def make_config() -> Callable[..., config_module.LadingConfig]:
+def make_config() -> typ.Callable[..., config_module.LadingConfig]:
     """Return a factory for publish-friendly configuration objects."""
 
-    def _make_config(**overrides: Any) -> config_module.LadingConfig:
+    def _make_config(**overrides: object) -> config_module.LadingConfig:
         publish_table = config_module.PublishConfig(strip_patches="all", **overrides)
         return config_module.LadingConfig(publish=publish_table)
 
@@ -35,7 +37,7 @@ def make_config() -> Callable[..., config_module.LadingConfig]:
 
 
 @pytest.fixture
-def make_crate() -> Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
+def make_crate() -> typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
     """Return a factory that materialises temporary workspace crates."""
 
     def _make_crate(
@@ -76,8 +78,8 @@ def make_crate() -> Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]:
 
 @pytest.fixture
 def make_workspace(
-    make_crate: Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
-) -> Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+) -> typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]:
     """Return a factory that assembles workspace graphs for tests."""
 
     def _make_workspace(root: Path, *crates: WorkspaceCrate) -> WorkspaceGraph:
@@ -89,7 +91,7 @@ def make_workspace(
 
 
 @pytest.fixture
-def make_dependency() -> Callable[[str], WorkspaceDependency]:
+def make_dependency() -> typ.Callable[[str], WorkspaceDependency]:
     """Return a factory for workspace dependency records."""
 
     def _make_dependency(name: str) -> WorkspaceDependency:
@@ -106,5 +108,10 @@ def make_dependency() -> Callable[[str], WorkspaceDependency]:
 @pytest.fixture
 def staging_root(tmp_path: Path) -> Path:
     """Provide a staging directory that sits alongside the workspace root."""
-
     return tmp_path.parent / f"{tmp_path.name}-staging"
+
+
+@pytest.fixture
+def publish_options(staging_root: Path) -> publish.PublishOptions:
+    """Return publish options that stage outside the workspace root."""
+    return publish.PublishOptions(build_directory=staging_root)

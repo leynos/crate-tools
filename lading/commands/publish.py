@@ -403,10 +403,10 @@ def _stage_workspace_readmes(
     crates: tuple[WorkspaceCrate, ...],
     workspace_root: Path,
     staging_root: Path,
-) -> list[Path]:
+) -> tuple[Path, ...]:
     """Copy the workspace README into ``crates`` located at ``staging_root``."""
     if not crates:
-        return []
+        return ()
 
     workspace_readme = workspace_root / "README.md"
     if not workspace_readme.exists():
@@ -433,7 +433,7 @@ def _stage_workspace_readmes(
         copied.append(staged_readme)
 
     copied.sort(key=lambda path: path.relative_to(staging_root).as_posix())
-    return copied
+    return tuple(copied)
 
 
 def prepare_workspace(
@@ -453,12 +453,10 @@ def prepare_workspace(
         preserve_symlinks=active_options.preserve_symlinks,
     )
     readme_crates = _collect_workspace_readme_targets(workspace)
-    copied_readmes = tuple(
-        _stage_workspace_readmes(
-            crates=readme_crates,
-            workspace_root=plan.workspace_root,
-            staging_root=staging_root,
-        )
+    copied_readmes = _stage_workspace_readmes(
+        crates=readme_crates,
+        workspace_root=plan.workspace_root,
+        staging_root=staging_root,
     )
     preparation = PublishPreparation(
         staging_root=staging_root, copied_readmes=copied_readmes
@@ -525,7 +523,7 @@ def run(
     *,
     options: PublishOptions | None = None,
 ) -> str:
-    """Plan crate publication for ``workspace_root``."""
+    """Plan and prepare crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
 
     active_configuration = _ensure_configuration(configuration, root_path)
