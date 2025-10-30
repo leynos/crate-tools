@@ -74,7 +74,7 @@ def _extract_staging_root_from_plan(lines: list[str]) -> Path:
     staging_line = next(
         (line for line in lines if line.startswith("Staged workspace at:")), None
     )
-    assert staging_line is not None
+    assert staging_line is not None, "Staging location not found in publish plan output"
     return Path(staging_line.split(": ", 1)[1])
 
 
