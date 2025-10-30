@@ -16,11 +16,9 @@ from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
-if typ.TYPE_CHECKING:
+try:
     from cmd_mox import CmdMox
-
-    from .test_common_steps import _run_cli  # noqa: F401
-else:
+except ModuleNotFoundError:
     CmdMox = typ.Any  # type: ignore[assignment]
 
 
