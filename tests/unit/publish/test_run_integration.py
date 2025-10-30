@@ -270,6 +270,29 @@ def test_run_raises_when_preflight_test_fails(
     assert "exit code 1" in message
 
 
+def _verify_cargo_commands_executed(
+    calls: list[tuple[tuple[str, ...], Path | None]],
+    expected_cwd: Path,
+) -> None:
+    """Verify cargo check and test were invoked with correct arguments."""
+    check_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "check"
+    )
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    for command, cwd in (check_call, test_call):
+        assert cwd == expected_cwd
+        assert command[2] == "--workspace"
+        assert command[3] == "--all-targets"
+        assert any(arg.startswith("--target-dir=") for arg in command[4:])
+
+
 def test_allow_dirty_flag_skips_clean_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -313,19 +336,4 @@ def test_allow_dirty_flag_skips_clean_check(
     )
 
     assert message.startswith(f"Publish plan for {root}")
-    check_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "check"
-    )
-    test_call = next(
-        command
-        for command in calls
-        if command[0][0] == "cargo" and command[0][1] == "test"
-    )
-
-    for command, cwd in (check_call, test_call):
-        assert cwd == root
-        assert command[2] == "--workspace"
-        assert command[3] == "--all-targets"
-        assert any(arg.startswith("--target-dir=") for arg in command[4:])
+    _verify_cargo_commands_executed(calls, root)
