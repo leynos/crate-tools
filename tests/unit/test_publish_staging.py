@@ -177,6 +177,38 @@ def test_stage_workspace_readmes_returns_empty_list_when_unused(
     assert copied == ()
 
 
+def test_collect_workspace_readme_targets_returns_opted_in_crates(
+    tmp_path: Path,
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+) -> None:
+    """Crates that request the workspace README are collected for staging."""
+    workspace_root = tmp_path / "workspace"
+    crate_alpha = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
+    crate_beta = make_crate(workspace_root, "beta")
+    workspace = make_workspace(workspace_root, crate_alpha, crate_beta)
+
+    result = publish._collect_workspace_readme_targets(workspace)
+
+    assert result == (crate_alpha,)
+
+
+def test_collect_workspace_readme_targets_ignores_non_workspace_requests(
+    tmp_path: Path,
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+) -> None:
+    """Crates with ``readme.workspace = false`` are omitted from staging."""
+    workspace_root = tmp_path / "workspace"
+    crate_alpha = make_crate(workspace_root, "alpha")
+    crate_beta = make_crate(workspace_root, "beta")
+    workspace = make_workspace(workspace_root, crate_alpha, crate_beta)
+
+    result = publish._collect_workspace_readme_targets(workspace)
+
+    assert result == ()
+
+
 def test_stage_workspace_readmes_copies_and_sorts_targets(
     tmp_path: Path,
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
