@@ -80,6 +80,28 @@ def _is_cargo_action_command(program: str, args: tuple[str, ...]) -> bool:
     return program == "cargo" and bool(args) and args[0] in {"check", "test"}
 
 
+def _validate_stub_arguments(
+    expected: tuple[str, ...],
+    received: tuple[str, ...],
+) -> None:
+    """Validate that received arguments match the expected prefix."""
+    if not expected:
+        return
+
+    if len(received) < len(expected):
+        message = "Received fewer arguments than expected for preflight stub"
+        raise AssertionError(message)
+
+    for index, expected_arg in enumerate(expected):
+        if expected_arg != received[index]:
+            message = (
+                "Preflight stub mismatch: expected argument prefix "
+                f"{expected_arg!r} at position {index}, got "
+                f"{received[index]!r}"
+            )
+            raise AssertionError(message)
+
+
 def _register_preflight_commands(
     cmd_mox: CmdMox,
     overrides: dict[tuple[str, ...], _CommandResponse],
@@ -117,21 +139,7 @@ def _register_preflight_commands(
             _response: _CommandResponse = response,
             _expected: tuple[str, ...] = expectation_args,
         ) -> tuple[str, str, int]:
-            if _expected:
-                received = tuple(invocation.args)
-                if len(received) < len(_expected):
-                    message = (
-                        "Received fewer arguments than expected for preflight stub"
-                    )
-                    raise AssertionError(message)
-                for index, expected_arg in enumerate(_expected):
-                    if expected_arg != received[index]:
-                        message = (
-                            "Preflight stub mismatch: expected argument prefix "
-                            f"{expected_arg!r} at position {index}, got "
-                            f"{received[index]!r}"
-                        )
-                        raise AssertionError(message)
+            _validate_stub_arguments(_expected, tuple(invocation.args))
             return (_response.stdout, _response.stderr, _response.exit_code)
 
         double.runs(_handler)
