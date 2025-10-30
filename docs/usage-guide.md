@@ -129,10 +129,12 @@ be published. Additional sections document crates skipped by manifest flags or
 configuration, along with any exclusion entries that do not match a workspace
 crate. After building the plan, `publish` validates the workspace by running
 `cargo check --workspace --all-targets` followed by
-`cargo test --workspace --all-targets` directly inside the workspace root. The
-commands execute after a `git status --porcelain` cleanliness check so that the
-pre-flight run sees the same files that would be published. Any non-zero exit
-aborts the command with a descriptive error message.
+`cargo test --workspace --all-targets` directly inside the workspace root. Each
+command reuses a temporary target directory so that build artefacts are isolated
+and discarded once the checks finish. The commands execute after a
+`git status --porcelain` cleanliness check so that the pre-flight run sees the
+same files that would be published. Any non-zero exit aborts the command with a
+descriptive error message.
 
 If the working tree contains uncommitted changes the run halts with a reminder
 to clean up or to re-run with `--allow-dirty`. Passing the flag skips the
@@ -165,7 +167,9 @@ before continuing.
 
 When the configuration excludes additional crates, or a manifest sets the
 `publish = false` flag, the plan prints dedicated sections. These make the
-reasons for skipping crates visible to the operator.
+reasons for skipping crates visible to the operator. The current release stops
+after producing the plan and running the pre-flight checks; cargo packaging and
+publication will arrive in a later milestone.
 
 The preparation phase now clones the entire workspace into a temporary build
 directory before any packaging steps run. The CLI prints the location of this

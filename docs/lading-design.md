@@ -395,16 +395,18 @@ names are listed before returning the user-specified order.
 
     Implementation detail: the command executes both cargo subcommands via
     `plumbum` directly in the workspace root so that any relative path
-    dependencies remain accessible. A preceding `git status --porcelain`
-    verifies that the working tree is clean; operators can pass `--allow-dirty`
-    to bypass the cleanliness guard when they intentionally want to exercise
-    uncommitted changes. For testing and controlled environments the helper
-    honours the `LADING_USE_CMD_MOX_STUB` environment variable: when set to a
-    truthy value (`1`, `true`, `yes`, or `on`) the pre-flight invocations
-    contact the cmd-mox IPC server instead of spawning real processes. Each
-    subcommand is encoded as `cargo::<name>` so that behavioural tests can
-    record expectations without interfering with the `cargo metadata` stub used
-    elsewhere.
+    dependencies remain accessible. Build artefacts are isolated by exporting a
+    per-run target directory created with `tempfile.TemporaryDirectory`; the
+    directory (and any compiled artefacts) is discarded automatically once the
+    checks complete. A preceding `git status --porcelain` verifies that the
+    working tree is clean; operators can pass `--allow-dirty` to bypass the
+    cleanliness guard when they intentionally want to exercise uncommitted
+    changes. For testing and controlled environments the helper honours the
+    `LADING_USE_CMD_MOX_STUB` environment variable: when set to a truthy value
+    (`1`, `true`, `yes`, or `on`) the pre-flight invocations contact the cmd-mox
+    IPC server instead of spawning real processes. Each subcommand is encoded as
+    `cargo::<name>` so that behavioural tests can record expectations without
+    interfering with the `cargo metadata` stub used elsewhere.
 
 3. **Iterate and Publish:** For each crate in the determined order:
 
@@ -421,6 +423,10 @@ names are listed before returning the user-specified order.
       tool will check the command's output for confirmation. It will also
       gracefully handle cases where a specific version has already been
       published, logging a warning and proceeding to the next crate.
+
+    > **Current scope:** The implementation delivered in this phase plans the
+    > publication order and performs the pre-flight validation steps described
+    > above. Packaging and publish execution will follow in a subsequent phase.
 
 ## 5. Refactoring and Project Structure
 

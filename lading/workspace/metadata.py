@@ -88,7 +88,9 @@ def _ensure_command() -> BoundCommand | _CmdMoxCommand:
 
 def _coerce_text(value: str | bytes) -> str:
     """Normalise process output to text."""
-    return value.decode("utf-8") if isinstance(value, bytes) else value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
 
 
 def load_cargo_metadata(

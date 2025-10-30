@@ -194,14 +194,22 @@ def test_run_executes_preflight_checks_in_workspace(
         ("git", "status", "--porcelain"),
         root,
     ) in calls
-    assert (
-        ("cargo", "check", "--workspace", "--all-targets"),
-        root,
-    ) in calls
-    assert (
-        ("cargo", "test", "--workspace", "--all-targets"),
-        root,
-    ) in calls
+    check_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "check"
+    )
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    for command, cwd in (check_call, test_call):
+        assert cwd == root
+        assert command[2] == "--workspace"
+        assert command[3] == "--all-targets"
+        assert any(arg.startswith("--target-dir=") for arg in command[4:])
 
 
 def test_run_raises_when_preflight_command_fails(
@@ -230,6 +238,35 @@ def test_run_raises_when_preflight_command_fails(
 
     message = str(excinfo.value)
     assert "cargo check" in message
+    assert "exit code 1" in message
+
+
+def test_run_raises_when_preflight_test_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Non-zero cargo test aborts the publish command."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
+
+    def failing_invoke(
+        command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        if command[0] == "git":
+            return 0, "", ""
+        if command[1] == "test":
+            return 1, "", "test failed"
+        return 0, "", ""
+
+    monkeypatch.setattr(publish, "_invoke", failing_invoke)
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish.run(root, configuration, workspace)
+
+    message = str(excinfo.value)
+    assert "cargo test" in message
     assert "exit code 1" in message
 
 
@@ -276,11 +313,19 @@ def test_allow_dirty_flag_skips_clean_check(
     )
 
     assert message.startswith(f"Publish plan for {root}")
-    assert (
-        ("cargo", "check", "--workspace", "--all-targets"),
-        root,
-    ) in calls
-    assert (
-        ("cargo", "test", "--workspace", "--all-targets"),
-        root,
-    ) in calls
+    check_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "check"
+    )
+    test_call = next(
+        command
+        for command in calls
+        if command[0][0] == "cargo" and command[0][1] == "test"
+    )
+
+    for command, cwd in (check_call, test_call):
+        assert cwd == root
+        assert command[2] == "--workspace"
+        assert command[3] == "--all-targets"
+        assert any(arg.startswith("--target-dir=") for arg in command[4:])

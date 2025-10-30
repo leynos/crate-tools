@@ -5,7 +5,10 @@ from __future__ import annotations
 import atexit
 import dataclasses as dc
 import os
+import shutil
+import tempfile
 import typing as typ
+from pathlib import Path
 
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
@@ -13,8 +16,6 @@ from lading.workspace import WorkspaceDependencyCycleError
 from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
@@ -57,7 +58,31 @@ class _CommandRunner(typ.Protocol):
 
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
-    """Runtime configuration for publish planning, staging, and checks."""
+    """Runtime configuration for publish planning, staging, and checks.
+
+    Parameters
+    ----------
+    allow_dirty:
+        When ``True`` the git cleanliness guard is skipped.
+    build_directory:
+        Optional directory used to stage workspace artifacts. When ``None``,
+        a temporary directory is created for each invocation.
+    preserve_symlinks:
+        Control whether staging preserves symbolic links in the workspace
+        clone instead of dereferencing them.
+    cleanup:
+        When :data:`True`, the staged workspace is removed automatically on
+        process exit.
+    configuration:
+        Optional :class:`~lading.config.LadingConfig` instance to reuse instead
+        of loading from disk.
+    workspace:
+        Optional pre-loaded workspace graph to reuse for planning.
+    command_runner:
+        Optional callable used to execute shell commands. Primarily intended
+        for tests and dependency injection.
+
+    """
 
     allow_dirty: bool = False
     build_directory: Path | None = None
@@ -550,17 +575,16 @@ def run(
     configuration_override = configuration or effective_options.configuration
     workspace_override = workspace or effective_options.workspace
     command_runner = effective_options.command_runner or _invoke
-
     active_configuration = _ensure_configuration(configuration_override, root_path)
     active_workspace = _ensure_workspace(workspace_override, root_path)
 
-    plan = plan_publication(
-        active_workspace, active_configuration, workspace_root=root_path
-    )
     _run_preflight_checks(
         root_path,
         allow_dirty=effective_options.allow_dirty,
         runner=command_runner,
+    )
+    plan = plan_publication(
+        active_workspace, active_configuration, workspace_root=root_path
     )
     preparation = prepare_workspace(plan, active_workspace, options=options)
     plan_message = _format_plan(
@@ -582,8 +606,19 @@ def _run_preflight_checks(
         workspace_root, allow_dirty=allow_dirty, runner=command_runner
     )
 
-    _run_cargo_preflight(workspace_root, "check", runner=command_runner)
-    _run_cargo_preflight(workspace_root, "test", runner=command_runner)
+    with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
+        target_path = Path(target)
+        extra_args = (
+            "--workspace",
+            "--all-targets",
+            f"--target-dir={target_path}",
+        )
+        _run_cargo_preflight(
+            workspace_root, "check", runner=command_runner, extra_args=extra_args
+        )
+        _run_cargo_preflight(
+            workspace_root, "test", runner=command_runner, extra_args=extra_args
+        )
 
 
 def _verify_clean_working_tree(
@@ -598,8 +633,12 @@ def _verify_clean_working_tree(
         cwd=workspace_root,
     )
     if exit_code != 0:
-        detail = stderr.strip() or stdout.strip()
-        message = "Failed to verify workspace state with git status"
+        detail = (stderr or stdout).strip()
+        message = (
+            "Failed to verify workspace state; is this a git repository?"
+            if "not a git repository" in detail.lower()
+            else "Failed to verify workspace state with git status"
+        )
         if detail:
             message = f"{message}: {detail}"
         raise PublishPreflightError(message)
@@ -612,14 +651,20 @@ def _verify_clean_working_tree(
 
 
 def _run_cargo_preflight(
-    workspace_root: Path, subcommand: str, *, runner: _CommandRunner
+    workspace_root: Path,
+    subcommand: typ.Literal["check", "test"],
+    *,
+    runner: _CommandRunner,
+    extra_args: tuple[str, ...] | None = None,
 ) -> None:
     """Run ``cargo <subcommand>`` inside ``workspace_root``."""
+    arguments = extra_args or ("--workspace", "--all-targets")
     exit_code, stdout, stderr = runner(
-        ("cargo", subcommand, "--workspace", "--all-targets"), cwd=workspace_root
+        ("cargo", subcommand, *arguments),
+        cwd=workspace_root,
     )
     if exit_code != 0:
-        detail = stderr.strip() or stdout.strip()
+        detail = (stderr or stdout).strip()
         message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
         if detail:
             message = f"{message}: {detail}"
@@ -645,13 +690,10 @@ def _invoke(
     if cwd is not None:
         kwargs["cwd"] = str(cwd)
     exit_code, stdout, stderr = bound.run(**kwargs)
-    return exit_code, _coerce_text(stdout), _coerce_text(stderr)
-
-
-def _coerce_text(value: str | bytes) -> str:
-    """Return ``value`` as a decoded text string."""
     return (
-        value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+        exit_code,
+        metadata_module._coerce_text(stdout),
+        metadata_module._coerce_text(stderr),
     )
 
 
@@ -700,8 +742,8 @@ def _invoke_via_cmd_mox(
     response = ipc.invoke_server(invocation, timeout)
     return (
         response.exit_code,
-        _coerce_text(response.stdout),
-        _coerce_text(response.stderr),
+        metadata_module._coerce_text(response.stdout),
+        metadata_module._coerce_text(response.stderr),
     )
 
 

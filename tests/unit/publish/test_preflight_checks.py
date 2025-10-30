@@ -7,6 +7,7 @@ import typing as typ
 import pytest
 
 from lading.commands import publish
+from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +26,7 @@ def test_split_command_rejects_empty_sequence() -> None:
     [
         ("cargo", "check"),
         ("cargo", "test", "--workspace"),
+        ("git", "status", "--porcelain"),
     ],
 )
 def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
@@ -48,14 +50,14 @@ def test_normalise_cmd_mox_command_forwards_non_cargo_commands(
     assert rewritten_args == expected_args
 
 
-def test_coerce_text_decodes_bytes() -> None:
+def test_metadata_coerce_text_decodes_bytes() -> None:
     """Binary output is decoded using UTF-8 with replacement semantics."""
     alpha = "\N{GREEK SMALL LETTER ALPHA}"
     encoded = alpha.encode()
-    assert publish._coerce_text(encoded) == alpha
+    assert metadata_module._coerce_text(encoded) == alpha
 
     binary = b"foo\xff"
-    assert publish._coerce_text(binary) == "foo\ufffd"
+    assert metadata_module._coerce_text(binary) == "foo\ufffd"
 
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", "on"])
@@ -116,3 +118,25 @@ def test_verify_clean_working_tree_detects_dirty_state(
 
     # Allow dirty should bypass the runner entirely.
     publish._verify_clean_working_tree(root, allow_dirty=True, runner=dirty_runner)
+
+
+def test_verify_clean_working_tree_reports_missing_repo(
+    tmp_path: Path,
+) -> None:
+    """A missing git repository surfaces a descriptive error."""
+
+    def missing_runner(
+        command: tuple[str, ...], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        assert command == ("git", "status", "--porcelain")
+        assert cwd == tmp_path
+        return 128, "", "fatal: Not a git repository"
+
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
+        publish._verify_clean_working_tree(
+            tmp_path, allow_dirty=False, runner=missing_runner
+        )
+
+    message = str(excinfo.value)
+    assert "git repository" in message
+    assert "fatal" in message

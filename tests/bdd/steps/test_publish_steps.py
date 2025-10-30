@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import dataclasses as dc
+import os
 import typing as typ
+from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
@@ -22,7 +24,7 @@ except ModuleNotFoundError:
 
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
+    from .test_common_steps import _run_cli  # noqa: F401
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -32,6 +34,12 @@ class _CommandResponse:
     exit_code: int
     stdout: str = ""
     stderr: str = ""
+
+
+class _CmdInvocation(typ.Protocol):
+    """Protocol describing the cmd-mox invocation payload."""
+
+    args: typ.Sequence[str]
 
 
 @pytest.fixture
@@ -102,22 +110,46 @@ def _register_preflight_commands(
             expectation_program = f"cargo::{args[0]}"
             expectation_args = tuple(args[1:])
         double = cmd_mox.stub(expectation_program)
-        double.with_args(*expectation_args).returns(
-            stdout=response.stdout,
-            stderr=response.stderr,
-            exit_code=response.exit_code,
-        )
+
+        def _handler(
+            invocation: _CmdInvocation,
+            *,
+            _response: _CommandResponse = response,
+            _expected: tuple[str, ...] = expectation_args,
+        ) -> tuple[str, str, int]:
+            if _expected:
+                received = tuple(invocation.args)
+                if len(received) < len(_expected):
+                    message = (
+                        "Received fewer arguments than expected for preflight stub"
+                    )
+                    raise AssertionError(message)
+                for index, expected_arg in enumerate(_expected):
+                    if expected_arg != received[index]:
+                        message = (
+                            "Preflight stub mismatch: expected argument prefix "
+                            f"{expected_arg!r} at position {index}, got "
+                            f"{received[index]!r}"
+                        )
+                        raise AssertionError(message)
+            return (_response.stdout, _response.stderr, _response.exit_code)
+
+        double.runs(_handler)
 
 
 def _invoke_publish_with_options(
-    workspace_directory: Path,
     repo_root: Path,
+    workspace_directory: Path,
+    *,
     cmd_mox: CmdMox,
-    *extra_args: str,
+    overrides: dict[tuple[str, ...], _CommandResponse],
+    extra_args: tuple[str, ...] = (),
 ) -> dict[str, typ.Any]:
-    """Execute the publish CLI with optional extra arguments."""
+    """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 
+    _register_preflight_commands(cmd_mox, overrides)
+    os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
     return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
 
 
@@ -129,8 +161,12 @@ def when_invoke_lading_publish(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    _register_preflight_commands(cmd_mox, preflight_overrides)
-    return _invoke_publish_with_options(workspace_directory, repo_root, cmd_mox)
+    return _invoke_publish_with_options(
+        repo_root,
+        workspace_directory,
+        cmd_mox=cmd_mox,
+        overrides=preflight_overrides,
+    )
 
 
 @when(
@@ -144,12 +180,12 @@ def when_invoke_lading_publish_allow_dirty(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
-    _register_preflight_commands(cmd_mox, preflight_overrides)
     return _invoke_publish_with_options(
-        workspace_directory,
         repo_root,
-        cmd_mox,
-        "--allow-dirty",
+        workspace_directory,
+        cmd_mox=cmd_mox,
+        overrides=preflight_overrides,
+        extra_args=("--allow-dirty",),
     )
 
 
