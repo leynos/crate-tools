@@ -7,7 +7,7 @@ import typing as typ
 import pytest
 
 from lading.commands import publish
-from tests.unit.conftest import _CrateSpec
+from tests.unit.conftest import PlanningFixtures, _CrateSpec
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
@@ -81,22 +81,20 @@ def _make_dependency_chain(
     ],
 )
 def test_plan_publication_filtering(
-    tmp_path: Path,
+    planning_fixtures: PlanningFixtures,
     crate_specs: list[tuple[str, bool]],
     exclude: list[str],
     expected: dict[str, tuple[str, ...]],
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Planner splits crates into publishable and skipped groups."""
-    root = tmp_path.resolve()
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
     crates = [
-        make_crate(root, name, _CrateSpec(publish=publish_flag))
+        fx.make_crate(root, name, _CrateSpec(publish=publish_flag))
         for name, publish_flag in crate_specs
     ]
-    workspace = make_workspace(root, *crates)
-    configuration = make_config(exclude=tuple(exclude))
+    workspace = fx.make_workspace(root, *crates)
+    configuration = fx.make_config(exclude=tuple(exclude))
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -130,17 +128,15 @@ def test_plan_publication_empty_workspace(
 
 
 def test_plan_publication_empty_exclude_list(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
 ) -> None:
     """Configuration exclusions default to publishing all eligible crates."""
-    root = tmp_path.resolve()
-    publishable = make_crate(root, "alpha")
-    manifest_skipped = make_crate(root, "beta", _CrateSpec(publish=False))
-    workspace = make_workspace(root, publishable, manifest_skipped)
-    configuration = make_config(exclude=())
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    publishable = fx.make_crate(root, "alpha")
+    manifest_skipped = fx.make_crate(root, "beta", _CrateSpec(publish=False))
+    workspace = fx.make_workspace(root, publishable, manifest_skipped)
+    configuration = fx.make_config(exclude=())
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -184,20 +180,18 @@ def test_plan_publication_records_multiple_missing_exclusions(
 
 
 def test_plan_publication_sorts_crates_by_name(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
 ) -> None:
     """Publishable and skipped crates appear in deterministic alphabetical order."""
-    root = tmp_path.resolve()
-    publishable_second = make_crate(root, "beta")
-    publishable_first = make_crate(root, "alpha")
-    manifest_skipped_late = make_crate(root, "epsilon", _CrateSpec(publish=False))
-    manifest_skipped_early = make_crate(root, "delta", _CrateSpec(publish=False))
-    config_skipped_late = make_crate(root, "theta")
-    config_skipped_early = make_crate(root, "gamma")
-    workspace = make_workspace(
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    publishable_second = fx.make_crate(root, "beta")
+    publishable_first = fx.make_crate(root, "alpha")
+    manifest_skipped_late = fx.make_crate(root, "epsilon", _CrateSpec(publish=False))
+    manifest_skipped_early = fx.make_crate(root, "delta", _CrateSpec(publish=False))
+    config_skipped_late = fx.make_crate(root, "theta")
+    config_skipped_early = fx.make_crate(root, "gamma")
+    workspace = fx.make_workspace(
         root,
         publishable_second,
         publishable_first,
@@ -206,7 +200,7 @@ def test_plan_publication_sorts_crates_by_name(
         config_skipped_late,
         config_skipped_early,
     )
-    configuration = make_config(exclude=("gamma", "theta"))
+    configuration = fx.make_config(exclude=("gamma", "theta"))
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -216,17 +210,15 @@ def test_plan_publication_sorts_crates_by_name(
 
 
 def test_plan_publication_multiple_configuration_skips(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
 ) -> None:
     """All configuration exclusions appear in the skipped configuration list."""
-    root = tmp_path.resolve()
-    gamma = make_crate(root, "gamma")
-    delta = make_crate(root, "delta")
-    workspace = make_workspace(root, gamma, delta)
-    configuration = make_config(exclude=("delta", "gamma"))
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    gamma = fx.make_crate(root, "gamma")
+    delta = fx.make_crate(root, "delta")
+    workspace = fx.make_workspace(root, gamma, delta)
+    configuration = fx.make_config(exclude=("delta", "gamma"))
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -235,22 +227,20 @@ def test_plan_publication_multiple_configuration_skips(
 
 
 def test_plan_publication_topologically_orders_dependencies(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Crates are sorted so that dependencies publish before their dependents."""
-    root = tmp_path.resolve()
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
     alpha, beta, gamma = _make_dependency_chain(
-        root, make_crate=make_crate, make_dependency=make_dependency
+        root, make_crate=fx.make_crate, make_dependency=make_dependency
     )
 
     plan = _plan_with_crates(
-        tmp_path,
-        make_workspace,
-        make_config,
+        fx.tmp_path,
+        fx.make_workspace,
+        fx.make_config,
         (gamma, beta, alpha),
     )
 
@@ -258,17 +248,15 @@ def test_plan_publication_topologically_orders_dependencies(
 
 
 def test_plan_publication_ignores_dev_dependency_cycles(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> None:
     """Dev-only dependency edges do not create publish-order cycles."""
     from lading.workspace import WorkspaceDependency
 
-    root = tmp_path.resolve()
-    alpha = make_crate(
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    alpha = fx.make_crate(
         root,
         "alpha",
         _CrateSpec(
@@ -282,13 +270,13 @@ def test_plan_publication_ignores_dev_dependency_cycles(
             )
         ),
     )
-    beta = make_crate(
+    beta = fx.make_crate(
         root,
         "beta",
         _CrateSpec(dependencies=(make_dependency("alpha"),)),
     )
-    workspace = make_workspace(root, alpha, beta)
-    configuration = make_config()
+    workspace = fx.make_workspace(root, alpha, beta)
+    configuration = fx.make_config()
 
     plan = publish.plan_publication(workspace, configuration)
 
@@ -296,22 +284,20 @@ def test_plan_publication_ignores_dev_dependency_cycles(
 
 
 def test_plan_publication_detects_dependency_cycles(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> None:
     """A dependency cycle raises an explicit planning error."""
-    root = tmp_path.resolve()
-    alpha = make_crate(
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    alpha = fx.make_crate(
         root, "alpha", _CrateSpec(dependencies=(make_dependency("beta"),))
     )
-    beta = make_crate(
+    beta = fx.make_crate(
         root, "beta", _CrateSpec(dependencies=(make_dependency("alpha"),))
     )
-    workspace = make_workspace(root, alpha, beta)
-    configuration = make_config()
+    workspace = fx.make_workspace(root, alpha, beta)
+    configuration = fx.make_config()
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
@@ -320,30 +306,28 @@ def test_plan_publication_detects_dependency_cycles(
 
 
 def test_plan_publication_ignores_cycles_in_non_publishable_crates(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Cycles among skipped crates do not block eligible publishable crates."""
-    root = tmp_path.resolve()
-    alpha = make_crate(root, "alpha")
-    cycle_a = make_crate(
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    alpha = fx.make_crate(root, "alpha")
+    cycle_a = fx.make_crate(
         root,
         "cycle-a",
         _CrateSpec(publish=False, dependencies=(make_dependency("cycle-b"),)),
     )
-    cycle_b = make_crate(
+    cycle_b = fx.make_crate(
         root,
         "cycle-b",
         _CrateSpec(publish=False, dependencies=(make_dependency("cycle-a"),)),
     )
 
     plan = _plan_with_crates(
-        tmp_path,
-        make_workspace,
-        make_config,
+        fx.tmp_path,
+        fx.make_workspace,
+        fx.make_config,
         (alpha, cycle_a, cycle_b),
     )
 
@@ -351,30 +335,28 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
 
 
 def test_plan_publication_configuration_skips_ignore_cycles(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Configuration exclusions bypass cycles outside publishable crates."""
-    root = tmp_path.resolve()
-    alpha = make_crate(root, "alpha")
-    cycle_a = make_crate(
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    alpha = fx.make_crate(root, "alpha")
+    cycle_a = fx.make_crate(
         root,
         "cycle-a",
         _CrateSpec(dependencies=(make_dependency("cycle-b"),)),
     )
-    cycle_b = make_crate(
+    cycle_b = fx.make_crate(
         root,
         "cycle-b",
         _CrateSpec(dependencies=(make_dependency("cycle-a"),)),
     )
 
     plan = _plan_with_crates(
-        tmp_path,
-        make_workspace,
-        make_config,
+        fx.tmp_path,
+        fx.make_workspace,
+        fx.make_config,
         (alpha, cycle_a, cycle_b),
         exclude=("cycle-a", "cycle-b"),
     )
@@ -383,23 +365,21 @@ def test_plan_publication_configuration_skips_ignore_cycles(
 
 
 def test_plan_publication_honours_configured_order(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Explicit publish.order values override the automatic dependency sort."""
+    fx = planning_fixtures
     alpha, beta, gamma = _make_dependency_chain(
-        tmp_path.resolve(),
-        make_crate=make_crate,
+        fx.tmp_path.resolve(),
+        make_crate=fx.make_crate,
         make_dependency=make_dependency,
     )
 
     plan = _plan_with_crates(
-        tmp_path,
-        make_workspace,
-        make_config,
+        fx.tmp_path,
+        fx.make_workspace,
+        fx.make_config,
         (alpha, beta, gamma),
         order=("gamma", "beta", "alpha"),
     )
@@ -408,17 +388,15 @@ def test_plan_publication_honours_configured_order(
 
 
 def test_plan_publication_rejects_incomplete_configured_order(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
 ) -> None:
     """Missing crates in publish.order surface a descriptive validation error."""
-    root = tmp_path.resolve()
-    alpha = make_crate(root, "alpha")
-    beta = make_crate(root, "beta")
-    workspace = make_workspace(root, alpha, beta)
-    configuration = make_config(order=("alpha",))
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    alpha = fx.make_crate(root, "alpha")
+    beta = fx.make_crate(root, "beta")
+    workspace = fx.make_workspace(root, alpha, beta)
+    configuration = fx.make_config(order=("alpha",))
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
         publish.plan_publication(workspace, configuration)
@@ -429,24 +407,22 @@ def test_plan_publication_rejects_incomplete_configured_order(
 
 
 def test_plan_publication_rejects_duplicate_configured_crates(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Repeated publish.order entries raise a duplicate configuration error."""
+    fx = planning_fixtures
     alpha, _, _ = _make_dependency_chain(
-        tmp_path.resolve(),
-        make_crate=make_crate,
+        fx.tmp_path.resolve(),
+        make_crate=fx.make_crate,
         make_dependency=make_dependency,
     )
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
         _plan_with_crates(
-            tmp_path,
-            make_workspace,
-            make_config,
+            fx.tmp_path,
+            fx.make_workspace,
+            fx.make_config,
             (alpha,),
             order=("alpha", "alpha"),
         )
@@ -455,24 +431,22 @@ def test_plan_publication_rejects_duplicate_configured_crates(
 
 
 def test_plan_publication_rejects_unknown_configured_crates(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
 ) -> None:
     """Names outside the publishable set trigger an informative error."""
+    fx = planning_fixtures
     alpha, _, _ = _make_dependency_chain(
-        tmp_path.resolve(),
-        make_crate=make_crate,
+        fx.tmp_path.resolve(),
+        make_crate=fx.make_crate,
         make_dependency=make_dependency,
     )
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
         _plan_with_crates(
-            tmp_path,
-            make_workspace,
-            make_config,
+            fx.tmp_path,
+            fx.make_workspace,
+            fx.make_config,
             (alpha,),
             order=("alpha", "omega"),
         )

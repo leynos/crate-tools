@@ -26,6 +26,16 @@ class _CrateSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningFixtures:
+    """Pre-assembled fixtures for plan_publication tests."""
+
+    tmp_path: Path
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+    make_config: typ.Callable[..., config_module.LadingConfig]
+
+
+@dataclass(frozen=True, slots=True)
 class PreparationFixtures:
     """Bundle workspace factories for publish staging tests."""
 
@@ -105,6 +115,22 @@ def make_workspace(
         return WorkspaceGraph(workspace_root=root, crates=tuple(crates))
 
     return _make_workspace
+
+
+@pytest.fixture
+def planning_fixtures(
+    tmp_path: Path,
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+) -> PlanningFixtures:
+    """Pre-assembled fixtures for plan_publication tests."""
+    return PlanningFixtures(
+        tmp_path=tmp_path,
+        make_crate=make_crate,
+        make_workspace=make_workspace,
+        make_config=make_config,
+    )
 
 
 @pytest.fixture
