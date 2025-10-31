@@ -276,10 +276,10 @@ def _verify_cargo_commands_executed(
         assert any(arg.startswith("--target-dir=") for arg in command[4:])
 
 
-def test_allow_dirty_flag_skips_clean_check(
+def test_dirty_workspace_rejected_without_allow_dirty(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``--allow-dirty`` bypasses the git status cleanliness guard."""
+    """Publish rejects dirty workspaces when --allow-dirty is not set."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
@@ -295,9 +295,21 @@ def test_allow_dirty_flag_skips_clean_check(
 
     monkeypatch.setattr(publish, "_invoke", dirty_invoke)
 
-    with pytest.raises(publish.PublishPreflightError):
+    with pytest.raises(publish.PublishPreflightError) as excinfo:
         publish.run(root, configuration, workspace)
 
+    assert "uncommitted changes" in str(excinfo.value)
+
+
+def test_allow_dirty_flag_bypasses_git_status_check(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``--allow-dirty`` skips git status check but runs cargo commands."""
+    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
+    root = tmp_path / "workspace"
+    root.mkdir()
+    workspace = make_workspace(root, make_crate(root, "alpha"))
+    configuration = make_config()
     calls: list[tuple[tuple[str, ...], Path | None]] = []
 
     def allow_dirty_invoke(
