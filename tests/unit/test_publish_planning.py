@@ -51,6 +51,30 @@ def _make_dependency_chain(
     return alpha, beta, gamma
 
 
+def _create_cycle(
+    root: Path,
+    *,
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
+    name_a: str = "cycle-a",
+    name_b: str = "cycle-b",
+    publish_a: bool = True,
+    publish_b: bool = True,
+) -> tuple[WorkspaceCrate, WorkspaceCrate]:
+    """Return two crates with mutual dependencies forming a cycle."""
+    crate_a = make_crate(
+        root,
+        name_a,
+        _CrateSpec(publish=publish_a, dependencies=(make_dependency(name_b),)),
+    )
+    crate_b = make_crate(
+        root,
+        name_b,
+        _CrateSpec(publish=publish_b, dependencies=(make_dependency(name_a),)),
+    )
+    return crate_a, crate_b
+
+
 @pytest.mark.parametrize(
     (
         "crate_specs",
@@ -145,38 +169,32 @@ def test_plan_publication_empty_exclude_list(
     assert plan.skipped_configuration == ()
 
 
+@pytest.mark.parametrize(
+    ("exclusions", "expected"),
+    [
+        pytest.param(("missing",), ("missing",), id="single"),
+        pytest.param(
+            ("missing1", "missing2", "missing3"),
+            ("missing1", "missing2", "missing3"),
+            id="multiple_ordered",
+        ),
+    ],
+)
 def test_plan_publication_records_missing_exclusions(
     tmp_path: Path,
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
     make_config: typ.Callable[..., config_module.LadingConfig],
+    exclusions: tuple[str, ...],
+    expected: tuple[str, ...],
 ) -> None:
     """Unknown entries in publish.exclude are reported in the plan."""
     root = tmp_path.resolve()
     workspace = make_workspace(root)
-    configuration = make_config(exclude=("missing",))
+    configuration = make_config(exclude=exclusions)
 
     plan = publish.plan_publication(workspace, configuration)
 
-    assert plan.missing_configuration_exclusions == ("missing",)
-
-
-def test_plan_publication_records_multiple_missing_exclusions(
-    tmp_path: Path,
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
-) -> None:
-    """Multiple unmatched exclusions are surfaced in configuration order."""
-    root = tmp_path.resolve()
-    workspace = make_workspace(root)
-    configuration = make_config(exclude=("missing1", "missing2", "missing3"))
-
-    plan = publish.plan_publication(workspace, configuration)
-
-    assert plan.missing_configuration_exclusions == (
-        "missing1",
-        "missing2",
-        "missing3",
-    )
+    assert plan.missing_configuration_exclusions == expected
 
 
 def test_plan_publication_sorts_crates_by_name(
@@ -290,17 +308,21 @@ def test_plan_publication_detects_dependency_cycles(
     """A dependency cycle raises an explicit planning error."""
     fx = planning_fixtures
     root = fx.tmp_path.resolve()
-    alpha = fx.make_crate(
-        root, "alpha", _CrateSpec(dependencies=(make_dependency("beta"),))
+    alpha, beta = _create_cycle(
+        root,
+        make_crate=fx.make_crate,
+        make_dependency=make_dependency,
+        name_a="alpha",
+        name_b="beta",
     )
-    beta = fx.make_crate(
-        root, "beta", _CrateSpec(dependencies=(make_dependency("alpha"),))
-    )
-    workspace = fx.make_workspace(root, alpha, beta)
-    configuration = fx.make_config()
 
     with pytest.raises(publish.PublishPlanError) as excinfo:
-        publish.plan_publication(workspace, configuration)
+        _plan_with_crates(
+            fx.tmp_path,
+            fx.make_workspace,
+            fx.make_config,
+            (alpha, beta),
+        )
 
     assert "dependency cycle" in str(excinfo.value)
 
@@ -313,15 +335,12 @@ def test_plan_publication_ignores_cycles_in_non_publishable_crates(
     fx = planning_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(root, "alpha")
-    cycle_a = fx.make_crate(
+    cycle_a, cycle_b = _create_cycle(
         root,
-        "cycle-a",
-        _CrateSpec(publish=False, dependencies=(make_dependency("cycle-b"),)),
-    )
-    cycle_b = fx.make_crate(
-        root,
-        "cycle-b",
-        _CrateSpec(publish=False, dependencies=(make_dependency("cycle-a"),)),
+        make_crate=fx.make_crate,
+        make_dependency=make_dependency,
+        publish_a=False,
+        publish_b=False,
     )
 
     plan = _plan_with_crates(
@@ -342,15 +361,10 @@ def test_plan_publication_configuration_skips_ignore_cycles(
     fx = planning_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(root, "alpha")
-    cycle_a = fx.make_crate(
+    cycle_a, cycle_b = _create_cycle(
         root,
-        "cycle-a",
-        _CrateSpec(dependencies=(make_dependency("cycle-b"),)),
-    )
-    cycle_b = fx.make_crate(
-        root,
-        "cycle-b",
-        _CrateSpec(dependencies=(make_dependency("cycle-a"),)),
+        make_crate=fx.make_crate,
+        make_dependency=make_dependency,
     )
 
     plan = _plan_with_crates(
