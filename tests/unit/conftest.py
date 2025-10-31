@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import dataclasses as dc
 import typing as typ
+from dataclasses import dataclass  # noqa: ICN003
 
 import pytest
 import tomlkit
@@ -16,13 +16,30 @@ if typ.TYPE_CHECKING:
     from pathlib import Path
 
 
-@dc.dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
 class _CrateSpec:
     """Describe how a temporary workspace crate should be created."""
 
     publish: bool = True
     dependencies: tuple[WorkspaceDependency, ...] = ()
     readme_workspace: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PreparationFixtures:
+    """Bundle workspace factories for publish staging tests."""
+
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
+    make_config: typ.Callable[..., config_module.LadingConfig]
+
+
+@dataclass(frozen=True, slots=True)
+class PrepareWorkspaceFixtures(PreparationFixtures):
+    """Preassembled fixtures for workspace staging integration tests."""
+
+    tmp_path: Path
+    publish_options: publish.PublishOptions
 
 
 @pytest.fixture
@@ -91,6 +108,20 @@ def make_workspace(
 
 
 @pytest.fixture
+def preparation_fixtures(
+    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    make_config: typ.Callable[..., config_module.LadingConfig],
+) -> PreparationFixtures:
+    """Bundle workspace helpers to cut down on fixture arguments."""
+    return PreparationFixtures(
+        make_crate=make_crate,
+        make_workspace=make_workspace,
+        make_config=make_config,
+    )
+
+
+@pytest.fixture
 def make_dependency() -> typ.Callable[[str], WorkspaceDependency]:
     """Return a factory for workspace dependency records."""
 
@@ -115,3 +146,19 @@ def staging_root(tmp_path: Path) -> Path:
 def publish_options(staging_root: Path) -> publish.PublishOptions:
     """Return publish options that stage outside the workspace root."""
     return publish.PublishOptions(build_directory=staging_root)
+
+
+@pytest.fixture
+def prepare_workspace_fixtures(
+    tmp_path: Path,
+    preparation_fixtures: PreparationFixtures,
+    publish_options: publish.PublishOptions,
+) -> PrepareWorkspaceFixtures:
+    """Pre-assembled fixtures for prepare_workspace integration tests."""
+    return PrepareWorkspaceFixtures(
+        make_crate=preparation_fixtures.make_crate,
+        make_workspace=preparation_fixtures.make_workspace,
+        make_config=preparation_fixtures.make_config,
+        tmp_path=tmp_path,
+        publish_options=publish_options,
+    )

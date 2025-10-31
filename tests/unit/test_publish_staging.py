@@ -7,12 +7,15 @@ import typing as typ
 import pytest
 
 from lading.commands import publish
-from tests.unit.conftest import _CrateSpec
+from tests.unit.conftest import (
+    PreparationFixtures,
+    PrepareWorkspaceFixtures,
+    _CrateSpec,
+)
 
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
-    from lading import config as config_module
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
@@ -117,8 +120,25 @@ def test_copy_workspace_tree_rejects_nested_clone(tmp_path: Path) -> None:
     assert "cannot be nested inside the workspace root" in str(excinfo.value)
 
 
-def test_copy_workspace_tree_preserves_symlinks(tmp_path: Path) -> None:
-    """Workspace symlinks remain symlinks when preservation is enabled."""
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        pytest.param(
+            {"preserve_symlinks": True, "expect_symlink": True},
+            id="preserve",
+        ),
+        pytest.param(
+            {"preserve_symlinks": False, "expect_symlink": False},
+            id="dereference",
+        ),
+    ],
+)
+def test_copy_workspace_tree_symlink_handling(
+    tmp_path: Path, scenario: dict[str, bool]
+) -> None:
+    """Workspace symlinks are preserved or dereferenced based on option."""
+    preserve_symlinks = scenario["preserve_symlinks"]
+    expect_symlink = scenario["expect_symlink"]
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
     target = workspace_root / "data.txt"
@@ -130,34 +150,14 @@ def test_copy_workspace_tree_preserves_symlinks(tmp_path: Path) -> None:
     build_directory.mkdir()
 
     staging_root = publish._copy_workspace_tree(
-        workspace_root, build_directory, preserve_symlinks=True
-    )
-
-    staged_link = staging_root / "alias.txt"
-    assert staged_link.is_symlink()
-    assert staged_link.resolve(strict=True) == staging_root / "data.txt"
-    assert staged_link.read_text(encoding="utf-8") == "payload"
-
-
-def test_copy_workspace_tree_dereferences_symlinks(tmp_path: Path) -> None:
-    """Symlinks become regular files when preservation is disabled."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    target = workspace_root / "data.txt"
-    target.write_text("payload", encoding="utf-8")
-    link = workspace_root / "alias.txt"
-    link.symlink_to(target.name)
-
-    build_directory = tmp_path / "staging"
-    build_directory.mkdir()
-
-    staging_root = publish._copy_workspace_tree(
-        workspace_root, build_directory, preserve_symlinks=False
+        workspace_root, build_directory, preserve_symlinks=preserve_symlinks
     )
 
     staged_link = staging_root / "alias.txt"
     assert staged_link.is_file()
-    assert not staged_link.is_symlink()
+    assert staged_link.is_symlink() == expect_symlink
+    if expect_symlink:
+        assert staged_link.resolve(strict=True) == staging_root / "data.txt"
     assert staged_link.read_text(encoding="utf-8") == "payload"
 
 
@@ -177,36 +177,36 @@ def test_stage_workspace_readmes_returns_empty_list_when_unused(
     assert copied == ()
 
 
-def test_collect_workspace_readme_targets_returns_opted_in_crates(
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        pytest.param({"readme_workspace": True, "expected_count": 1}, id="opted_in"),
+        pytest.param(
+            {"readme_workspace": False, "expected_count": 0}, id="not_opted_in"
+        ),
+    ],
+)
+def test_collect_workspace_readme_targets_by_opt_in(
     tmp_path: Path,
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
+    scenario: dict[str, bool | int],
 ) -> None:
-    """Crates that request the workspace README are collected for staging."""
+    """Collection includes only crates with readme.workspace = true."""
+    readme_workspace = bool(scenario["readme_workspace"])
+    expected_count = int(scenario["expected_count"])
     workspace_root = tmp_path / "workspace"
-    crate_alpha = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
+    crate_alpha = make_crate(
+        workspace_root, "alpha", _CrateSpec(readme_workspace=readme_workspace)
+    )
     crate_beta = make_crate(workspace_root, "beta")
     workspace = make_workspace(workspace_root, crate_alpha, crate_beta)
 
     result = publish._collect_workspace_readme_targets(workspace)
 
-    assert result == (crate_alpha,)
-
-
-def test_collect_workspace_readme_targets_ignores_non_workspace_requests(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-) -> None:
-    """Crates with ``readme.workspace = false`` are omitted from staging."""
-    workspace_root = tmp_path / "workspace"
-    crate_alpha = make_crate(workspace_root, "alpha")
-    crate_beta = make_crate(workspace_root, "beta")
-    workspace = make_workspace(workspace_root, crate_alpha, crate_beta)
-
-    result = publish._collect_workspace_readme_targets(workspace)
-
-    assert result == ()
+    assert len(result) == expected_count
+    if expected_count > 0:
+        assert result == (crate_alpha,)
 
 
 def test_stage_workspace_readmes_copies_and_sorts_targets(
@@ -278,22 +278,21 @@ def test_stage_workspace_readmes_rejects_external_crates(
 
 
 def test_prepare_workspace_copies_workspace_readme(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
-    publish_options: publish.PublishOptions,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
 ) -> None:
     """Staging copies the workspace README into crates that opt in."""
-    workspace_root = tmp_path / "workspace"
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
     readme = workspace_root / "README.md"
     readme.write_text("Workspace README", encoding="utf-8")
-    crate = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
-    workspace = make_workspace(workspace_root, crate)
-    configuration = make_config()
+    crate = pf.make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
+    workspace = pf.make_workspace(workspace_root, crate)
+    configuration = pf.make_config()
     plan = publish.plan_publication(workspace, configuration)
-    preparation = publish.prepare_workspace(plan, workspace, options=publish_options)
+    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
 
     staging_root = preparation.staging_root
     assert staging_root.exists()
@@ -308,24 +307,24 @@ def test_prepare_workspace_copies_workspace_readme(
 
 
 def test_prepare_workspace_requires_workspace_readme(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
 ) -> None:
     """Staging fails fast when crates expect the workspace README."""
-    workspace_root = tmp_path / "workspace"
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
-    workspace = make_workspace(workspace_root, crate)
-    configuration = make_config()
+    crate = pf.make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
+    workspace = pf.make_workspace(workspace_root, crate)
+    configuration = pf.make_config()
     plan = publish.plan_publication(workspace, configuration)
 
     with pytest.raises(publish.PublishPreparationError) as excinfo:
         publish.prepare_workspace(
             plan,
             workspace,
-            options=publish.PublishOptions(build_directory=tmp_path / "staging"),
+            options=fx.publish_options,
         )
 
     assert "README.md" in str(excinfo.value)
@@ -333,19 +332,19 @@ def test_prepare_workspace_requires_workspace_readme(
 
 def test_prepare_workspace_registers_cleanup(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
 ) -> None:
     """Cleanup-enabled staging registers an atexit handler."""
-    workspace_root = tmp_path / "workspace"
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = make_crate(workspace_root, "alpha")
-    workspace = make_workspace(workspace_root, crate)
-    plan = publish.plan_publication(workspace, make_config())
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, pf.make_config())
 
-    build_directory = tmp_path / "staging"
+    build_directory = fx.publish_options.build_directory
     registered: list[typ.Callable[[], None]] = []
 
     def capture(callback: typ.Callable[[], None]) -> None:
@@ -364,3 +363,79 @@ def test_prepare_workspace_registers_cleanup(
 
     cleanup()
     assert not build_directory.exists()
+
+
+def test_prepare_workspace_returns_empty_copied_readmes(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Staging reports no copied READMEs when no crates opt in."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    configuration = pf.make_config()
+    plan = publish.plan_publication(workspace, configuration)
+
+    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+
+    assert preparation.copied_readmes == ()
+
+
+def test_prepare_workspace_copies_multiple_readmes_sorted(
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Staging returns copied README paths in workspace-relative order."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    readme = workspace_root / "README.md"
+    readme.write_text("Workspace", encoding="utf-8")
+    crate_alpha = pf.make_crate(
+        workspace_root, "alpha", _CrateSpec(readme_workspace=True)
+    )
+    crate_beta = pf.make_crate(
+        workspace_root, "beta", _CrateSpec(readme_workspace=True)
+    )
+    workspace = pf.make_workspace(workspace_root, crate_alpha, crate_beta)
+    plan = publish.plan_publication(workspace, pf.make_config())
+
+    preparation = publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+
+    relative = [
+        path.relative_to(preparation.staging_root).as_posix()
+        for path in preparation.copied_readmes
+    ]
+    assert relative == ["alpha/README.md", "beta/README.md"]
+    for staged in preparation.copied_readmes:
+        assert staged.read_text(encoding="utf-8") == readme.read_text(encoding="utf-8")
+
+
+def test_prepare_workspace_does_not_register_cleanup_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    prepare_workspace_fixtures: PrepareWorkspaceFixtures,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """Cleanup hook is not registered when the option remains disabled."""
+    fx = prepare_workspace_fixtures
+    pf = preparation_fixtures
+    workspace_root = fx.tmp_path / "workspace"
+    workspace_root.mkdir()
+    crate = pf.make_crate(workspace_root, "alpha")
+    workspace = pf.make_workspace(workspace_root, crate)
+    plan = publish.plan_publication(workspace, pf.make_config())
+
+    registered: list[typ.Callable[[], None]] = []
+
+    def capture(callback: typ.Callable[[], None]) -> None:
+        registered.append(callback)
+
+    monkeypatch.setattr(publish.atexit, "register", capture)
+
+    publish.prepare_workspace(plan, workspace, options=fx.publish_options)
+
+    assert registered == []
