@@ -213,18 +213,18 @@ def test_run_executes_preflight_checks_in_workspace(
 
 
 @pytest.mark.parametrize(
-    ("cargo_command", "error_message"),
+    ("failing_subcommand", "expected_message"),
     [
-        ("check", "check failed"),
-        ("test", "test failed"),
+        ("check", "cargo check"),
+        ("test", "cargo test"),
     ],
     ids=["check_failure", "test_failure"],
 )
 def test_run_raises_when_preflight_cargo_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    cargo_command: str,
-    error_message: str,
+    failing_subcommand: str,
+    expected_message: str,
 ) -> None:
     """Non-zero cargo check/test aborts the publish command."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
@@ -238,8 +238,8 @@ def test_run_raises_when_preflight_cargo_fails(
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, "", ""
-        if len(command) > 1 and command[1] == cargo_command:
-            return 1, "", error_message
+        if len(command) > 1 and command[1] == failing_subcommand:
+            return 1, "", expected_message
         return 0, "", ""
 
     monkeypatch.setattr(publish, "_invoke", failing_invoke)
@@ -248,7 +248,8 @@ def test_run_raises_when_preflight_cargo_fails(
         publish.run(root, configuration, workspace)
 
     message = str(excinfo.value)
-    assert f"cargo {cargo_command}" in message
+    assert expected_message in message
+    assert f"cargo {failing_subcommand}" in message
     assert "exit code 1" in message
 
 
