@@ -235,14 +235,41 @@ def test_stage_workspace_readmes_copies_and_sorts_targets(
         assert path.read_text(encoding="utf-8") == "workspace"
 
 
-def test_stage_workspace_readmes_requires_workspace_readme(
+@pytest.mark.parametrize(
+    ("has_readme", "crate_in_workspace", "expected_error"),
+    [
+        pytest.param(
+            True,
+            False,
+            "outside the workspace root",
+            id="rejects_external_crates",
+        ),
+        pytest.param(
+            False,
+            True,
+            "Workspace README.md is required",
+            id="requires_workspace_readme",
+        ),
+    ],
+)
+def test_stage_workspace_readmes_validation_errors(
     tmp_path: Path,
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
+    has_readme: bool,
+    crate_in_workspace: bool,
+    expected_error: str,
 ) -> None:
-    """Crates requesting the workspace README require the source file."""
+    """Staging readmes validates workspace README existence and crate location."""
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
-    crate = make_crate(workspace_root, "alpha", _CrateSpec(readme_workspace=True))
+
+    if has_readme:
+        readme = workspace_root / "README.md"
+        readme.write_text("workspace", encoding="utf-8")
+
+    crate_root = workspace_root if crate_in_workspace else tmp_path / "external"
+    crate = make_crate(crate_root, "alpha", _CrateSpec(readme_workspace=True))
+
     staging_root = tmp_path / "staging"
     staging_root.mkdir()
 
@@ -251,30 +278,7 @@ def test_stage_workspace_readmes_requires_workspace_readme(
             crates=(crate,), workspace_root=workspace_root, staging_root=staging_root
         )
 
-    assert "Workspace README.md is required" in str(excinfo.value)
-
-
-def test_stage_workspace_readmes_rejects_external_crates(
-    tmp_path: Path,
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-) -> None:
-    """Crates outside the workspace cannot receive the workspace README."""
-    workspace_root = tmp_path / "workspace"
-    workspace_root.mkdir()
-    readme = workspace_root / "README.md"
-    readme.write_text("workspace", encoding="utf-8")
-
-    external_root = tmp_path / "external"
-    crate = make_crate(external_root, "alpha", _CrateSpec(readme_workspace=True))
-    staging_root = tmp_path / "staging"
-    staging_root.mkdir()
-
-    with pytest.raises(publish.PublishPreparationError) as excinfo:
-        publish._stage_workspace_readmes(
-            crates=(crate,), workspace_root=workspace_root, staging_root=staging_root
-        )
-
-    assert "outside the workspace root" in str(excinfo.value)
+    assert expected_error in str(excinfo.value)
 
 
 def test_prepare_workspace_copies_workspace_readme(
