@@ -212,10 +212,21 @@ def test_run_executes_preflight_checks_in_workspace(
         assert any(arg.startswith("--target-dir=") for arg in command[4:])
 
 
-def test_run_raises_when_preflight_command_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("cargo_command", "error_message"),
+    [
+        ("check", "check failed"),
+        ("test", "test failed"),
+    ],
+    ids=["check_failure", "test_failure"],
+)
+def test_run_raises_when_preflight_cargo_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    cargo_command: str,
+    error_message: str,
 ) -> None:
-    """Non-zero cargo check aborts the publish command."""
+    """Non-zero cargo check/test aborts the publish command."""
     monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
     root = tmp_path / "workspace"
     root.mkdir()
@@ -227,8 +238,8 @@ def test_run_raises_when_preflight_command_fails(
     ) -> tuple[int, str, str]:
         if command[0] == "git":
             return 0, "", ""
-        if command[1] == "check":
-            return 1, "", "check failed"
+        if len(command) > 1 and command[1] == cargo_command:
+            return 1, "", error_message
         return 0, "", ""
 
     monkeypatch.setattr(publish, "_invoke", failing_invoke)
@@ -237,36 +248,7 @@ def test_run_raises_when_preflight_command_fails(
         publish.run(root, configuration, workspace)
 
     message = str(excinfo.value)
-    assert "cargo check" in message
-    assert "exit code 1" in message
-
-
-def test_run_raises_when_preflight_test_fails(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Non-zero cargo test aborts the publish command."""
-    monkeypatch.setattr(publish, "_run_preflight_checks", ORIGINAL_PREFLIGHT)
-    root = tmp_path / "workspace"
-    root.mkdir()
-    workspace = make_workspace(root, make_crate(root, "alpha"))
-    configuration = make_config()
-
-    def failing_invoke(
-        command: typ.Sequence[str], *, cwd: Path | None = None
-    ) -> tuple[int, str, str]:
-        if command[0] == "git":
-            return 0, "", ""
-        if command[1] == "test":
-            return 1, "", "test failed"
-        return 0, "", ""
-
-    monkeypatch.setattr(publish, "_invoke", failing_invoke)
-
-    with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish.run(root, configuration, workspace)
-
-    message = str(excinfo.value)
-    assert "cargo test" in message
+    assert f"cargo {cargo_command}" in message
     assert "exit code 1" in message
 
 
