@@ -181,16 +181,15 @@ def test_plan_publication_empty_exclude_list(
     ],
 )
 def test_plan_publication_records_missing_exclusions(
-    tmp_path: Path,
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
+    planning_fixtures: PlanningFixtures,
     exclusions: tuple[str, ...],
     expected: tuple[str, ...],
 ) -> None:
     """Unknown entries in publish.exclude are reported in the plan."""
-    root = tmp_path.resolve()
-    workspace = make_workspace(root)
-    configuration = make_config(exclude=exclusions)
+    fx = planning_fixtures
+    root = fx.tmp_path.resolve()
+    workspace = fx.make_workspace(root)
+    configuration = fx.make_config(exclude=exclusions)
 
     plan = publish.plan_publication(workspace, configuration)
 
