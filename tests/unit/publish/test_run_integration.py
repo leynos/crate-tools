@@ -34,6 +34,13 @@ def test_run_normalises_workspace_root(
         return plan_workspace
 
     monkeypatch.setattr("lading.workspace.load_workspace", fake_load)
+    monkeypatch.setattr(
+        publish,
+        "prepare_workspace",
+        lambda *_args, **_kwargs: publish.PublishPreparation(
+            staging_root=resolved, copied_readmes=()
+        ),
+    )
     output = publish.run(workspace, configuration)
 
     assert output.splitlines()[0] == f"Publish plan for {resolved}"

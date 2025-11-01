@@ -53,7 +53,6 @@ class _CmdInvocation(typ.Protocol):
 @pytest.fixture
 def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
     """Provide per-scenario overrides for publish pre-flight commands."""
-
     return {}
 
 
@@ -139,7 +138,6 @@ def _register_preflight_commands(
     overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> None:
     """Install cmd-mox doubles for publish pre-flight commands."""
-
     defaults = {
         ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
         (
@@ -218,7 +216,6 @@ def given_cargo_check_fails(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> None:
     """Simulate a failing cargo check command."""
-
     preflight_overrides[("cargo", "check", "--workspace", "--all-targets")] = (
         _CommandResponse(exit_code=1, stderr="cargo check failed")
     )
@@ -229,7 +226,6 @@ def given_cargo_test_fails(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> None:
     """Simulate a failing cargo test command."""
-
     preflight_overrides[("cargo", "test", "--workspace", "--all-targets")] = (
         _CommandResponse(exit_code=1, stderr="cargo test failed")
     )
@@ -240,7 +236,6 @@ def given_workspace_dirty(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> None:
     """Simulate a dirty working tree for git status."""
-
     preflight_overrides[("git", "status", "--porcelain")] = _CommandResponse(
         exit_code=0,
         stdout=" M Cargo.toml\n",
@@ -250,7 +245,6 @@ def given_workspace_dirty(
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
 def then_publish_prints_plan(cli_run: dict[str, typ.Any], crate_name: str) -> None:
     """Assert that the publish command emits a publication plan summary."""
-
     assert cli_run["returncode"] == 0
     workspace = cli_run["workspace"]
     lines = [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
@@ -264,7 +258,6 @@ def then_publish_lists_crates_in_order(
     cli_run: dict[str, typ.Any], crate_names: str
 ) -> None:
     """Assert that publishable crates appear in the expected order."""
-
     expected = [name.strip() for name in crate_names.split(",") if name.strip()]
     lines = _publish_plan_lines(cli_run)
     header = f"Crates to publish ({len(expected)}):"
@@ -282,7 +275,6 @@ def then_publish_lists_crates_in_order(
 @then("the publish command reports that no crates are publishable")
 def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
     """Assert that the publish command highlights the empty publish list."""
-
     assert cli_run["returncode"] == 0
     lines = _publish_plan_lines(cli_run)
     assert "Crates to publish: none" in lines
@@ -290,13 +282,11 @@ def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
 
 def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
-
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
 
 
 def _extract_staging_root_from_plan(lines: list[str]) -> Path:
     """Return the staging root path parsed from publish plan ``lines``."""
-
     staging_line = next(
         (line for line in lines if line.startswith("Staged workspace at:")), None
     )
@@ -311,7 +301,6 @@ def then_publish_reports_manifest_skip(
     cli_run: dict[str, typ.Any], crate_name: str
 ) -> None:
     """Assert the publish plan lists ``crate_name`` under manifest skips."""
-
     lines = _publish_plan_lines(cli_run)
     assert "Skipped (publish = false):" in lines
     section_index = lines.index("Skipped (publish = false):")
@@ -328,7 +317,6 @@ def then_publish_reports_configuration_skip(
     cli_run: dict[str, typ.Any], crate_name: str
 ) -> None:
     """Assert the publish plan lists ``crate_name`` under configuration skips."""
-
     lines = _publish_plan_lines(cli_run)
     assert "Skipped via publish.exclude:" in lines
     section_index = lines.index("Skipped via publish.exclude:")
@@ -345,7 +333,6 @@ def then_publish_reports_multiple_configuration_skips(
     cli_run: dict[str, typ.Any], crate_names: str
 ) -> None:
     """Assert the publish plan lists all configuration exclusions."""
-
     expected_names = [name.strip() for name in crate_names.split(",") if name.strip()]
     lines = _publish_plan_lines(cli_run)
     assert "Skipped via publish.exclude:" in lines
@@ -360,7 +347,6 @@ def then_publish_reports_missing_exclusion(
     cli_run: dict[str, typ.Any], name: str
 ) -> None:
     """Assert the publish plan reports the missing exclusion ``name``."""
-
     lines = _publish_plan_lines(cli_run)
     assert "Configured exclusions not found in workspace:" in lines
     section_index = lines.index("Configured exclusions not found in workspace:")
@@ -371,7 +357,6 @@ def then_publish_reports_missing_exclusion(
 @then(parsers.parse('the publish command omits section "{header}"'))
 def then_publish_omits_section(cli_run: dict[str, typ.Any], header: str) -> None:
     """Assert that the publish plan does not mention ``header``."""
-
     lines = _publish_plan_lines(cli_run)
     assert header not in lines
 
@@ -386,7 +371,6 @@ def then_publish_staging_contains_readme(
     cli_run: dict[str, typ.Any], crate_name: str
 ) -> None:
     """Assert that staging propagated the workspace README into ``crate_name``."""
-
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)
     staged_readme = staging_root / "crates" / crate_name / "README.md"
@@ -409,7 +393,6 @@ def then_publish_lists_copied_readme(
     cli_run: dict[str, typ.Any], crate_name: str
 ) -> None:
     """Assert that the publish plan lists the staged README for ``crate_name``."""
-
     lines = _publish_plan_lines(cli_run)
     staging_root = _extract_staging_root_from_plan(lines)
     expected_relative = Path("crates") / crate_name / "README.md"

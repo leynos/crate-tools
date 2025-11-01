@@ -12,7 +12,6 @@ from lading import config as config_module
 from lading.commands import publish
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
-
 _ORIGINAL_PREFLIGHT = publish._run_preflight_checks
 
 if typ.TYPE_CHECKING:
@@ -48,7 +47,6 @@ type PrepareWorkspaceFixtures = PublishFixtures
 @pytest.fixture(autouse=True)
 def disable_publish_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub publish pre-flight checks for tests that do not exercise them."""
-
     monkeypatch.setattr(
         publish,
         "_run_preflight_checks",
