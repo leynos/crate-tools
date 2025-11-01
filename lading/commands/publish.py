@@ -2,22 +2,28 @@
 
 from __future__ import annotations
 
+import atexit
 import dataclasses as dc
+import shutil
+import tempfile
 import typing as typ
+from pathlib import Path
 
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import WorkspaceDependencyCycleError
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
 class PublishPlanError(RuntimeError):
     """Raised when the publish plan cannot be constructed."""
+
+
+class PublishPreparationError(RuntimeError):
+    """Raised when publish preparation cannot stage required assets."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -34,6 +40,23 @@ class PublishPlan:
     def publishable_names(self) -> tuple[str, ...]:
         """Return the names of crates scheduled for publication."""
         return tuple(crate.name for crate in self.publishable)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class PublishOptions:
+    """Configuration for publish command execution."""
+
+    build_directory: Path | None = None
+    preserve_symlinks: bool = True
+    cleanup: bool = False
+
+
+@dc.dataclass(frozen=True, slots=True)
+class PublishPreparation:
+    """Details about the staged workspace copy."""
+
+    staging_root: Path
+    copied_readmes: tuple[Path, ...]
 
 
 def _categorize_crates(
@@ -328,6 +351,142 @@ def _format_plan(
     return "\n".join(lines)
 
 
+def _normalise_build_directory(
+    workspace_root: Path, build_directory: Path | None
+) -> Path:
+    """Return a directory suitable for staging workspace artifacts."""
+    if build_directory is None:
+        return Path(tempfile.mkdtemp(prefix="lading-publish-"))
+
+    candidate = Path(build_directory).expanduser()
+    candidate = candidate.resolve(strict=False)
+
+    workspace_root = workspace_root.resolve(strict=True)
+    if candidate.is_relative_to(workspace_root):
+        message = "Publish build directory cannot reside within the workspace root"
+        raise PublishPreparationError(message)
+
+    candidate.mkdir(parents=True, exist_ok=True)
+    return candidate
+
+
+def _copy_workspace_tree(
+    workspace_root: Path, build_directory: Path, *, preserve_symlinks: bool
+) -> Path:
+    """Copy ``workspace_root`` into ``build_directory`` and return the clone.
+
+    When ``preserve_symlinks`` is :data:`True`, the cloned tree keeps symbolic
+    links instead of dereferencing them. This avoids unexpectedly copying large
+    directories outside the workspace while still allowing callers to opt into
+    dereferencing if required.
+    """
+    workspace_root = workspace_root.resolve(strict=True)
+    staging_root = build_directory / workspace_root.name
+    if staging_root.resolve(strict=False).is_relative_to(workspace_root):
+        message = "Publish staging directory cannot be nested inside the workspace root"
+        raise PublishPreparationError(message)
+    if staging_root.exists():
+        shutil.rmtree(staging_root)
+    shutil.copytree(workspace_root, staging_root, symlinks=preserve_symlinks)
+    return staging_root
+
+
+def _collect_workspace_readme_targets(
+    workspace: WorkspaceGraph,
+) -> tuple[WorkspaceCrate, ...]:
+    """Return crates that opt into using the workspace README."""
+    return tuple(crate for crate in workspace.crates if crate.readme_is_workspace)
+
+
+def _stage_workspace_readmes(
+    *,
+    crates: tuple[WorkspaceCrate, ...],
+    workspace_root: Path,
+    staging_root: Path,
+) -> tuple[Path, ...]:
+    """Copy the workspace README into ``crates`` located at ``staging_root``."""
+    if not crates:
+        return ()
+
+    workspace_readme = workspace_root / "README.md"
+    if not workspace_readme.exists():
+        message = (
+            "Workspace README.md is required by crates that set readme.workspace = true"
+        )
+        raise PublishPreparationError(message)
+
+    copied: list[Path] = []
+    for crate in crates:
+        try:
+            relative_crate_root = crate.root_path.relative_to(workspace_root)
+        except ValueError as exc:
+            message = (
+                "Crate "
+                f"{crate.name!r} is outside the workspace root; "
+                "cannot stage README"
+            )
+            raise PublishPreparationError(message) from exc
+        staged_crate_root = staging_root / relative_crate_root
+        staged_crate_root.mkdir(parents=True, exist_ok=True)
+        staged_readme = staged_crate_root / "README.md"
+        shutil.copyfile(workspace_readme, staged_readme)
+        copied.append(staged_readme)
+
+    copied.sort(key=lambda path: path.relative_to(staging_root).as_posix())
+    return tuple(copied)
+
+
+def prepare_workspace(
+    plan: PublishPlan,
+    workspace: WorkspaceGraph,
+    *,
+    options: PublishOptions | None = None,
+) -> PublishPreparation:
+    """Stage a workspace copy and propagate workspace READMEs."""
+    active_options = PublishOptions() if options is None else options
+    build_directory = _normalise_build_directory(
+        plan.workspace_root, active_options.build_directory
+    )
+    staging_root = _copy_workspace_tree(
+        plan.workspace_root,
+        build_directory,
+        preserve_symlinks=active_options.preserve_symlinks,
+    )
+    readme_crates = _collect_workspace_readme_targets(workspace)
+    copied_readmes = _stage_workspace_readmes(
+        crates=readme_crates,
+        workspace_root=plan.workspace_root,
+        staging_root=staging_root,
+    )
+    preparation = PublishPreparation(
+        staging_root=staging_root, copied_readmes=copied_readmes
+    )
+    if active_options.cleanup:
+        build_root = staging_root.parent
+
+        def _cleanup() -> None:
+            shutil.rmtree(build_root, ignore_errors=True)
+
+        atexit.register(_cleanup)
+    return preparation
+
+
+def _format_preparation_summary(preparation: PublishPreparation) -> tuple[str, ...]:
+    """Return formatted summary lines for staging results."""
+    lines = [f"Staged workspace at: {preparation.staging_root}"]
+    if preparation.copied_readmes:
+        lines.append("Copied workspace README to:")
+        for path in preparation.copied_readmes:
+            try:
+                relative_path = path.relative_to(preparation.staging_root)
+            except ValueError:
+                relative_path = path
+            lines.append(f"- {relative_path}")
+    else:
+        lines.append("Copied workspace README to: none required")
+    return tuple(lines)
+
+
 def _ensure_configuration(
     configuration: LadingConfig | None, workspace_root: Path
 ) -> LadingConfig:
@@ -361,8 +520,10 @@ def run(
     workspace_root: Path,
     configuration: LadingConfig | None = None,
     workspace: WorkspaceGraph | None = None,
+    *,
+    options: PublishOptions | None = None,
 ) -> str:
-    """Plan crate publication for ``workspace_root``."""
+    """Plan and prepare crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
 
     active_configuration = _ensure_configuration(configuration, root_path)
@@ -371,4 +532,9 @@ def run(
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
-    return _format_plan(plan, strip_patches=active_configuration.publish.strip_patches)
+    preparation = prepare_workspace(plan, active_workspace, options=options)
+    plan_message = _format_plan(
+        plan, strip_patches=active_configuration.publish.strip_patches
+    )
+    summary_lines = _format_preparation_summary(preparation)
+    return f"{plan_message}\n\n" + "\n".join(summary_lines)

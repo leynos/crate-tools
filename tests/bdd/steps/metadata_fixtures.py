@@ -53,6 +53,15 @@ def _write_workspace_manifest(
     workspace_manifest.write_text(manifest_text, encoding="utf-8")
 
 
+def _write_workspace_readme(
+    workspace_directory: Path, content: str = "# Workspace README\n"
+) -> Path:
+    """Create or overwrite a workspace README for behavioural fixtures."""
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text(content, encoding="utf-8")
+    return readme_path
+
+
 def _mock_cargo_metadata(
     cmd_mox: CmdMox,
     workspace_directory: Path,
@@ -108,6 +117,7 @@ def given_cargo_metadata_sample(
         """,
         encoding="utf-8",
     )
+    _write_workspace_readme(workspace_directory)
     _write_workspace_manifest(workspace_directory, ["crates/alpha"])
     _mock_cargo_metadata(
         cmd_mox,
@@ -121,6 +131,14 @@ def given_cargo_metadata_sample(
         ],
         member_ids=["alpha-id"],
     )
+
+
+@given("the workspace README is removed")
+def given_workspace_readme_removed(workspace_directory: Path) -> None:
+    """Delete the workspace README to exercise error handling paths."""
+    readme_path = workspace_directory / "README.md"
+    if readme_path.exists():
+        readme_path.unlink()
 
 
 @given("cargo metadata describes a workspace with a dev dependency cycle")
@@ -276,6 +294,7 @@ def given_cargo_metadata_two_crates(
             )
         )
         members.append(f"crates/{name}")
+    _write_workspace_readme(workspace_directory)
     _write_workspace_manifest(workspace_directory, members)
     _mock_cargo_metadata(
         cmd_mox,

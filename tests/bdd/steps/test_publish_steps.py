@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typing as typ
+from pathlib import Path
 
 from pytest_bdd import parsers, then, when
 
@@ -11,8 +12,6 @@ from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
 if typ.TYPE_CHECKING:
-    from pathlib import Path
-
     from .test_common_steps import _run_cli  # noqa: F401
 
 
@@ -68,6 +67,15 @@ def then_publish_reports_none(cli_run: dict[str, typ.Any]) -> None:
 def _publish_plan_lines(cli_run: dict[str, typ.Any]) -> list[str]:
     """Return trimmed publish plan output lines for ``cli_run``."""
     return [line.strip() for line in cli_run["stdout"].splitlines() if line.strip()]
+
+
+def _extract_staging_root_from_plan(lines: list[str]) -> Path:
+    """Return the staging root path parsed from publish plan ``lines``."""
+    staging_line = next(
+        (line for line in lines if line.startswith("Staged workspace at:")), None
+    )
+    assert staging_line is not None, "Staging location not found in publish plan output"
+    return Path(staging_line.split(": ", 1)[1])
 
 
 @then(
@@ -135,3 +143,47 @@ def then_publish_omits_section(cli_run: dict[str, typ.Any], header: str) -> None
     """Assert that the publish plan does not mention ``header``."""
     lines = _publish_plan_lines(cli_run)
     assert header not in lines
+
+
+@then(
+    parsers.parse(
+        'the publish staging directory for crate "{crate_name}" '
+        "contains the workspace README"
+    )
+)
+def then_publish_staging_contains_readme(
+    cli_run: dict[str, typ.Any], crate_name: str
+) -> None:
+    """Assert that staging propagated the workspace README into ``crate_name``."""
+    lines = _publish_plan_lines(cli_run)
+    staging_root = _extract_staging_root_from_plan(lines)
+    staged_readme = staging_root / "crates" / crate_name / "README.md"
+    assert staged_readme.exists()
+
+    workspace_root = Path(cli_run["workspace"])
+    source_readme = workspace_root / "README.md"
+    assert source_readme.exists()
+    assert staged_readme.read_text(encoding="utf-8") == source_readme.read_text(
+        encoding="utf-8"
+    )
+
+
+@then(
+    parsers.parse(
+        'the publish plan lists copied workspace README for crate "{crate_name}"'
+    )
+)
+def then_publish_lists_copied_readme(
+    cli_run: dict[str, typ.Any], crate_name: str
+) -> None:
+    """Assert that the publish plan lists the staged README for ``crate_name``."""
+    lines = _publish_plan_lines(cli_run)
+    staging_root = _extract_staging_root_from_plan(lines)
+    expected_relative = Path("crates") / crate_name / "README.md"
+    expected_entry = f"- {expected_relative.as_posix()}"
+    assert expected_entry in lines
+
+    # The formatting helper reports relative paths when possible, so verify
+    # that the corresponding staged README exists where the CLI claims.
+    staged_readme = staging_root / expected_relative
+    assert staged_readme.exists()

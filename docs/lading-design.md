@@ -319,6 +319,16 @@ lading bump <new_version> [--dry-run]
   `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency
   entries that reference workspace crates. Existing requirement operators and
   inline trivia remain intact.
+- The publish workflow stages a clean workspace copy in a temporary directory
+  before packaging. The staging directory must live outside the source tree to
+  avoid recursive copies. Crates that opt into `readme.workspace = true`
+  receive the root README within the staged workspace, and the CLI reports each
+  copied path so operators can confirm the assets that will be packaged.
+  Symbolic links remain links by default to avoid cloning large external trees;
+  callers can opt into dereferencing by disabling `preserve_symlinks` via
+  `PublishOptions`. Likewise, `PublishOptions(cleanup=True)` registers an
+  `atexit` hook that removes the temporary build directory after the process
+  exits.
 - Documentation rewrites honour `--dry-run`; the command reports the files but
   skips writing to disk. The CLI summary now reports both manifest and
   documentation counts, and documentation entries are suffixed with
@@ -365,25 +375,25 @@ lading publish [--live] [--allow-dirty]
 Implementation note: the planner now performs a deterministic topological sort
 using Kahn's algorithm with a lexicographically ordered queue so that parallel
 branches remain stable across runs. The resulting `PublishPlan` raises a
-`PublishPlanError` when a cycle prevents ordering, surfacing the crates involved
-to the operator. When `publish.order` is configured the planner validates that
-every publishable crate appears exactly once and that no unknown names are
-listed before returning the user-specified order.
+`PublishPlanError` when a cycle prevents ordering, surfacing the crates
+involved to the operator. When `publish.order` is configured the planner
+validates that every publishable crate appears exactly once and that no unknown
+names are listed before returning the user-specified order.
 
-4. **Prepare Workspace Manifest**: Within the temporary clone of the
+1. **Prepare Workspace Manifest**: Within the temporary clone of the
    repository, determine the patch stripping strategy based on the
    publish.strip_patches configuration and the execution mode (--dry-run flag).
 
     - If strip_patches is "all" (or is unset and this is a dry run), remove the
       entire [patch.crates-io] section from the Cargo.toml.
 
-5. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
+2. **Execute Pre-Publish Checks:** Before publishing, run a series of checks in
    a clean, temporary clone of the repository to ensure integrity:
 
     - Run `cargo check --all-targets` for the entire workspace.
     - Run `cargo test --all-targets` for the entire workspace.
 
-6. **Iterate and Publish:** For each crate in the determined order:
+3. **Iterate and Publish:** For each crate in the determined order:
 
     - **Patch Handling (per-crate)**: If strip_patches is "per-crate" (or is
       unset and this is a live run), remove the specific patch entry for the

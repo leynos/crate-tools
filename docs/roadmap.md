@@ -129,7 +129,7 @@ handling workspace READMEs.
     `README.md` with a TOML snippet confirms the version inside the snippet is
     correctly updated.
 
-- [ ] **Implement Workspace README Handling:**
+- [x] **Implement Workspace README Handling:**
 
   - **Outcome:** The `publish` command's preparation step correctly copies the
     workspace `README.md` to member crates that have
