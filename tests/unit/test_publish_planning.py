@@ -324,44 +324,41 @@ def test_plan_publication_detects_dependency_cycles(
     assert "dependency cycle" in str(excinfo.value)
 
 
-def test_plan_publication_ignores_cycles_in_non_publishable_crates(
+@pytest.mark.parametrize(
+    ("cycle_publish_flags", "excludes", "scenario"),
+    [
+        pytest.param(
+            {"publish_a": False, "publish_b": False},
+            (),
+            "manifest",
+            id="ignores_cycles_in_non_publishable_crates",
+        ),
+        pytest.param(
+            {},
+            ("cycle-a", "cycle-b"),
+            "configuration",
+            id="configuration_skips_ignore_cycles",
+        ),
+    ],
+)
+def test_plan_publication_ignores_cycles_in_skipped_crates(
     planning_fixtures: PlanningFixtures,
+    cycle_publish_flags: dict[str, bool],
+    excludes: tuple[str, ...],
+    scenario: str,
 ) -> None:
-    """Cycles among skipped crates do not block eligible publishable crates."""
+    """Cycles skipped via manifest or configuration do not block publishable crates."""
     fx = planning_fixtures
     root = fx.tmp_path.resolve()
     alpha = fx.make_crate(root, "alpha")
-    cycle_a, cycle_b = _create_cycle(
-        fx,
-        publish_a=False,
-        publish_b=False,
-    )
+    cycle_a, cycle_b = _create_cycle(fx, **cycle_publish_flags)
 
     plan = _plan_with_crates(
         fx.tmp_path,
         fx.make_workspace,
         fx.make_config,
         (alpha, cycle_a, cycle_b),
-    )
-
-    assert plan.publishable == (alpha,)
-
-
-def test_plan_publication_configuration_skips_ignore_cycles(
-    planning_fixtures: PlanningFixtures,
-) -> None:
-    """Configuration exclusions bypass cycles outside publishable crates."""
-    fx = planning_fixtures
-    root = fx.tmp_path.resolve()
-    alpha = fx.make_crate(root, "alpha")
-    cycle_a, cycle_b = _create_cycle(fx)
-
-    plan = _plan_with_crates(
-        fx.tmp_path,
-        fx.make_workspace,
-        fx.make_config,
-        (alpha, cycle_a, cycle_b),
-        exclude=("cycle-a", "cycle-b"),
+        exclude=excludes,
     )
 
     assert plan.publishable == (alpha,)
