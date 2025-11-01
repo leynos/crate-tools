@@ -33,6 +33,7 @@ class PlanningFixtures:
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
     make_config: typ.Callable[..., config_module.LadingConfig]
+    make_dependency: typ.Callable[[str], WorkspaceDependency]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +124,7 @@ def planning_fixtures(
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
     make_config: typ.Callable[..., config_module.LadingConfig],
+    make_dependency: typ.Callable[[str], WorkspaceDependency],
 ) -> PlanningFixtures:
     """Pre-assembled fixtures for plan_publication tests."""
     return PlanningFixtures(
@@ -130,6 +132,7 @@ def planning_fixtures(
         make_crate=make_crate,
         make_workspace=make_workspace,
         make_config=make_config,
+        make_dependency=make_dependency,
     )
 
 
