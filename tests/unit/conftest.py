@@ -1,5 +1,4 @@
 """Shared fixtures and helpers for publish unit tests."""
-
 from __future__ import annotations
 
 import typing as typ
@@ -26,31 +25,20 @@ class _CrateSpec:
 
 
 @dataclass(frozen=True, slots=True)
-class PlanningFixtures:
-    """Pre-assembled fixtures for plan_publication tests."""
+class PublishFixtures:
+    """Bundle reusable publish helpers to trim fixture fan-out."""
 
     tmp_path: Path
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
     make_config: typ.Callable[..., config_module.LadingConfig]
     make_dependency: typ.Callable[[str], WorkspaceDependency]
-
-
-@dataclass(frozen=True, slots=True)
-class PreparationFixtures:
-    """Bundle workspace factories for publish staging tests."""
-
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate]
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph]
-    make_config: typ.Callable[..., config_module.LadingConfig]
-
-
-@dataclass(frozen=True, slots=True)
-class PrepareWorkspaceFixtures(PreparationFixtures):
-    """Preassembled fixtures for workspace staging integration tests."""
-
-    tmp_path: Path
     publish_options: publish.PublishOptions
+
+
+type PlanningFixtures = PublishFixtures
+type PreparationFixtures = PublishFixtures
+type PrepareWorkspaceFixtures = PublishFixtures
 
 
 @pytest.fixture
@@ -119,35 +107,35 @@ def make_workspace(
 
 
 @pytest.fixture
-def planning_fixtures(
+def publish_fixtures(
     tmp_path: Path,
     make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
     make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
     make_config: typ.Callable[..., config_module.LadingConfig],
     make_dependency: typ.Callable[[str], WorkspaceDependency],
-) -> PlanningFixtures:
-    """Pre-assembled fixtures for plan_publication tests."""
-    return PlanningFixtures(
+    publish_options: publish.PublishOptions,
+) -> PublishFixtures:
+    """Return the composite publish fixtures used across unit suites."""
+    return PublishFixtures(
         tmp_path=tmp_path,
         make_crate=make_crate,
         make_workspace=make_workspace,
         make_config=make_config,
         make_dependency=make_dependency,
+        publish_options=publish_options,
     )
 
 
 @pytest.fixture
-def preparation_fixtures(
-    make_crate: typ.Callable[[Path, str, _CrateSpec | None], WorkspaceCrate],
-    make_workspace: typ.Callable[[Path, WorkspaceCrate], WorkspaceGraph],
-    make_config: typ.Callable[..., config_module.LadingConfig],
-) -> PreparationFixtures:
-    """Bundle workspace helpers to cut down on fixture arguments."""
-    return PreparationFixtures(
-        make_crate=make_crate,
-        make_workspace=make_workspace,
-        make_config=make_config,
-    )
+def planning_fixtures(publish_fixtures: PublishFixtures) -> PlanningFixtures:
+    """Expose the composite fixtures under the planning-specific alias."""
+    return publish_fixtures
+
+
+@pytest.fixture
+def preparation_fixtures(publish_fixtures: PublishFixtures) -> PreparationFixtures:
+    """Expose the composite fixtures under the staging-specific alias."""
+    return publish_fixtures
 
 
 @pytest.fixture
@@ -179,15 +167,7 @@ def publish_options(staging_root: Path) -> publish.PublishOptions:
 
 @pytest.fixture
 def prepare_workspace_fixtures(
-    tmp_path: Path,
-    preparation_fixtures: PreparationFixtures,
-    publish_options: publish.PublishOptions,
+    publish_fixtures: PublishFixtures,
 ) -> PrepareWorkspaceFixtures:
     """Pre-assembled fixtures for prepare_workspace integration tests."""
-    return PrepareWorkspaceFixtures(
-        make_crate=preparation_fixtures.make_crate,
-        make_workspace=preparation_fixtures.make_workspace,
-        make_config=preparation_fixtures.make_config,
-        tmp_path=tmp_path,
-        publish_options=publish_options,
-    )
+    return publish_fixtures
