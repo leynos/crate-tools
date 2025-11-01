@@ -2,28 +2,244 @@
 
 from __future__ import annotations
 
+import dataclasses as dc
+import os
 import typing as typ
 from pathlib import Path
 
-from pytest_bdd import parsers, then, when
+import pytest
+from pytest_bdd import given, parsers, then, when
+
+from lading.commands import publish
+from lading.workspace import metadata as metadata_module
 
 from . import config_fixtures as _config_fixtures  # noqa: F401
 from . import manifest_fixtures as _manifest_fixtures  # noqa: F401
 from . import metadata_fixtures as _metadata_fixtures  # noqa: F401
 
+try:
+    from cmd_mox import CmdMox
+except ModuleNotFoundError:
+    CmdMox = typ.Any  # type: ignore[assignment]
+
+
 if typ.TYPE_CHECKING:
     from .test_common_steps import _run_cli  # noqa: F401
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _CommandResponse:
+    """Describe the outcome of a mocked command invocation."""
+
+    exit_code: int
+    stdout: str = ""
+    stderr: str = ""
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _PreflightStubConfig:
+    """Configuration for cmd-mox preflight command stubs."""
+
+    cmd_mox: CmdMox
+    overrides: dict[tuple[str, ...], _CommandResponse] = dc.field(default_factory=dict)
+
+
+class _CmdInvocation(typ.Protocol):
+    """Protocol describing the cmd-mox invocation payload."""
+
+    args: typ.Sequence[str]
+
+
+@pytest.fixture
+def preflight_overrides() -> dict[tuple[str, ...], _CommandResponse]:
+    """Provide per-scenario overrides for publish pre-flight commands."""
+    return {}
+
+
+@given("cmd-mox IPC socket is unset")
+def given_cmd_mox_socket_unset(
+    monkeypatch: pytest.MonkeyPatch, cmd_mox: CmdMox
+) -> None:
+    """Ensure cmd-mox stub usage fails due to a missing socket variable."""
+    from cmd_mox import environment as env_mod
+
+    del cmd_mox
+    monkeypatch.delenv(env_mod.CMOX_IPC_SOCKET_ENV, raising=False)
+    monkeypatch.setenv(metadata_module.CMD_MOX_STUB_ENV_VAR, "1")
+
+
+@when(
+    "I run publish pre-flight checks for that workspace",
+    target_fixture="preflight_result",
+)
+def when_run_publish_preflight_checks(workspace_directory: Path) -> dict[str, typ.Any]:
+    """Execute publish pre-flight checks directly and capture failures."""
+    error: publish.PublishPreflightError | None = None
+    try:
+        publish._run_preflight_checks(workspace_directory, allow_dirty=False)
+    except publish.PublishPreflightError as exc:
+        error = exc
+    return {"error": error}
+
+
+def _is_cargo_action_command(program: str, args: tuple[str, ...]) -> bool:
+    """Check if command is a cargo check or test invocation."""
+    return program == "cargo" and bool(args) and args[0] in {"check", "test"}
+
+
+def _validate_stub_arguments(
+    expected: tuple[str, ...],
+    received: tuple[str, ...],
+) -> None:
+    """Validate that received arguments match the expected prefix."""
+    if not expected:
+        return
+
+    if len(received) < len(expected):
+        message = "Received fewer arguments than expected for preflight stub"
+        raise AssertionError(message)
+
+    for index, expected_arg in enumerate(expected):
+        if expected_arg != received[index]:
+            message = (
+                "Preflight stub mismatch: expected argument prefix "
+                f"{expected_arg!r} at position {index}, got "
+                f"{received[index]!r}"
+            )
+            raise AssertionError(message)
+
+
+def _resolve_preflight_expectation(
+    command: tuple[str, ...],
+) -> tuple[str, tuple[str, ...]]:
+    """Return the cmd-mox program and argument prefix for ``command``."""
+    program, *args = command
+    argument_tuple = tuple(args)
+    if _is_cargo_action_command(program, argument_tuple):
+        return f"cargo::{argument_tuple[0]}", argument_tuple[1:]
+    return program, argument_tuple
+
+
+def _make_preflight_handler(
+    response: _CommandResponse,
+    expected_arguments: tuple[str, ...],
+) -> typ.Callable[[_CmdInvocation], tuple[str, str, int]]:
+    """Build a cmd-mox handler that validates argument prefixes."""
+
+    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+        _validate_stub_arguments(expected_arguments, tuple(invocation.args))
+        return (response.stdout, response.stderr, response.exit_code)
+
+    return _handler
+
+
+def _register_preflight_commands(
+    cmd_mox: CmdMox,
+    overrides: dict[tuple[str, ...], _CommandResponse],
+) -> None:
+    """Install cmd-mox doubles for publish pre-flight commands."""
+    defaults = {
+        ("git", "status", "--porcelain"): _CommandResponse(exit_code=0),
+        (
+            "cargo",
+            "check",
+            "--workspace",
+            "--all-targets",
+        ): _CommandResponse(exit_code=0),
+        (
+            "cargo",
+            "test",
+            "--workspace",
+            "--all-targets",
+        ): _CommandResponse(exit_code=0),
+    }
+    defaults.update(overrides)
+    for command, response in defaults.items():
+        expectation_program, expectation_args = _resolve_preflight_expectation(command)
+        cmd_mox.stub(expectation_program).runs(
+            _make_preflight_handler(response, expectation_args)
+        )
+
+
+def _invoke_publish_with_options(
+    repo_root: Path,
+    workspace_directory: Path,
+    stub_config: _PreflightStubConfig,
+    *extra_args: str,
+) -> dict[str, typ.Any]:
+    """Register preflight doubles, enable stubs, and run the CLI."""
+    from .test_common_steps import _run_cli
+
+    _register_preflight_commands(stub_config.cmd_mox, stub_config.overrides)
+    previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
+    os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
+    try:
+        return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
+    finally:
+        if previous is None:
+            os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
+        else:
+            os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
 def when_invoke_lading_publish(
     workspace_directory: Path,
     repo_root: Path,
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    from .test_common_steps import _run_cli
+    stub_config = _PreflightStubConfig(cmd_mox, preflight_overrides)
+    return _invoke_publish_with_options(repo_root, workspace_directory, stub_config)
 
-    return _run_cli(repo_root, workspace_directory, "publish")
+
+@when(
+    "I invoke lading publish with that workspace using --allow-dirty",
+    target_fixture="cli_run",
+)
+def when_invoke_lading_publish_allow_dirty(
+    workspace_directory: Path,
+    repo_root: Path,
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+) -> dict[str, typ.Any]:
+    """Execute the publish CLI with ``--allow-dirty`` enabled."""
+    stub_config = _PreflightStubConfig(cmd_mox, preflight_overrides)
+    return _invoke_publish_with_options(
+        repo_root, workspace_directory, stub_config, "--allow-dirty"
+    )
+
+
+@given("cargo check fails during publish pre-flight")
+def given_cargo_check_fails(
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+) -> None:
+    """Simulate a failing cargo check command."""
+    preflight_overrides[("cargo", "check", "--workspace", "--all-targets")] = (
+        _CommandResponse(exit_code=1, stderr="cargo check failed")
+    )
+
+
+@given("cargo test fails during publish pre-flight")
+def given_cargo_test_fails(
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+) -> None:
+    """Simulate a failing cargo test command."""
+    preflight_overrides[("cargo", "test", "--workspace", "--all-targets")] = (
+        _CommandResponse(exit_code=1, stderr="cargo test failed")
+    )
+
+
+@given("the workspace has uncommitted changes")
+def given_workspace_dirty(
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+) -> None:
+    """Simulate a dirty working tree for git status."""
+    preflight_overrides[("git", "status", "--porcelain")] = _CommandResponse(
+        exit_code=0,
+        stdout=" M Cargo.toml\n",
+    )
 
 
 @then(parsers.parse('the publish command prints the publish plan for "{crate_name}"'))
@@ -187,3 +403,19 @@ def then_publish_lists_copied_readme(
     # that the corresponding staged README exists where the CLI claims.
     staged_readme = staging_root / expected_relative
     assert staged_readme.exists()
+
+
+@then(
+    "the publish pre-flight error contains "
+    '"cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"'
+)
+def then_publish_preflight_reports_missing_socket(
+    preflight_result: dict[str, typ.Any],
+) -> None:
+    """Assert that publish pre-flight checks report the missing socket."""
+    error = preflight_result.get("error")
+    assert isinstance(error, publish.PublishPreflightError)
+    assert (
+        "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+        in str(error)
+    )

@@ -94,7 +94,7 @@ def _mock_cargo_metadata(
         exit_code=0,
         stdout=json.dumps(payload),
         stderr="",
-    )
+    ).any_order()
 
 
 @given("cargo metadata describes a sample workspace")

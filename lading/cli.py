@@ -35,6 +35,12 @@ _DRY_RUN_PARAMETER = Parameter(
 )
 DryRunFlag = typ.Annotated[bool, _DRY_RUN_PARAMETER]
 
+_ALLOW_DIRTY_PARAMETER = Parameter(
+    name="allow-dirty",
+    help="Skip the clean working tree check before running publish pre-flight checks.",
+)
+AllowDirtyFlag = typ.Annotated[bool, _ALLOW_DIRTY_PARAMETER]
+
 app = App(help="Manage Rust workspaces with the lading toolkit.")
 
 
@@ -221,10 +227,20 @@ def bump(
 @app.command
 def publish(
     workspace_root: WorkspaceRootOption | None = None,
+    *,
+    allow_dirty: AllowDirtyFlag = False,
 ) -> str:
-    """Return placeholder acknowledgement for the ``publish`` subcommand."""
+    """Execute publish planning with pre-flight checks."""
     resolved = normalise_workspace_root(workspace_root)
-    return _run_with_context(resolved, commands.publish.run)
+    return _run_with_context(
+        resolved,
+        lambda root, configuration, workspace: commands.publish.run(
+            root,
+            configuration,
+            workspace,
+            options=commands.publish.PublishOptions(allow_dirty=allow_dirty),
+        ),
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience entry point

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import atexit
 import dataclasses as dc
+import os
 import shutil
 import tempfile
 import typing as typ
@@ -12,10 +13,14 @@ from pathlib import Path
 from lading import config as config_module
 from lading.utils.path import normalise_workspace_root
 from lading.workspace import WorkspaceDependencyCycleError
+from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
+
+from plumbum import local
+from plumbum.commands.processes import CommandNotFound
 
 
 class PublishPlanError(RuntimeError):
@@ -42,13 +47,50 @@ class PublishPlan:
         return tuple(crate.name for crate in self.publishable)
 
 
+class _CommandRunner(typ.Protocol):
+    """Protocol describing the callable used to execute shell commands."""
+
+    def __call__(
+        self, command: typ.Sequence[str], *, cwd: Path | None = None
+    ) -> tuple[int, str, str]:
+        """Execute ``command`` and return exit status and decoded output."""
+
+
 @dc.dataclass(frozen=True, slots=True)
 class PublishOptions:
-    """Configuration for publish command execution."""
+    """Runtime configuration for publish planning, staging, and checks.
 
+    Parameters
+    ----------
+    allow_dirty:
+        When ``True`` the git cleanliness guard is skipped.
+    build_directory:
+        Optional directory used to stage workspace artifacts. When ``None``,
+        a temporary directory is created for each invocation.
+    preserve_symlinks:
+        Control whether staging preserves symbolic links in the workspace
+        clone instead of dereferencing them.
+    cleanup:
+        When :data:`True`, the staged workspace is removed automatically on
+        process exit.
+    configuration:
+        Optional :class:`~lading.config.LadingConfig` instance to reuse instead
+        of loading from disk.
+    workspace:
+        Optional pre-loaded workspace graph to reuse for planning.
+    command_runner:
+        Optional callable used to execute shell commands. Primarily intended
+        for tests and dependency injection.
+
+    """
+
+    allow_dirty: bool = False
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = False
+    configuration: LadingConfig | None = None
+    workspace: WorkspaceGraph | None = None
+    command_runner: _CommandRunner | None = None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -57,6 +99,10 @@ class PublishPreparation:
 
     staging_root: Path
     copied_readmes: tuple[Path, ...]
+
+
+class PublishPreflightError(RuntimeError):
+    """Raised when required pre-publication checks fail."""
 
 
 def _categorize_crates(
@@ -525,10 +571,18 @@ def run(
 ) -> str:
     """Plan and prepare crate publication for ``workspace_root``."""
     root_path = normalise_workspace_root(workspace_root)
+    effective_options = PublishOptions() if options is None else options
+    configuration_override = configuration or effective_options.configuration
+    workspace_override = workspace or effective_options.workspace
+    command_runner = effective_options.command_runner or _invoke
+    active_configuration = _ensure_configuration(configuration_override, root_path)
+    active_workspace = _ensure_workspace(workspace_override, root_path)
 
-    active_configuration = _ensure_configuration(configuration, root_path)
-    active_workspace = _ensure_workspace(workspace, root_path)
-
+    _run_preflight_checks(
+        root_path,
+        allow_dirty=effective_options.allow_dirty,
+        runner=command_runner,
+    )
     plan = plan_publication(
         active_workspace, active_configuration, workspace_root=root_path
     )
@@ -538,3 +592,168 @@ def run(
     )
     summary_lines = _format_preparation_summary(preparation)
     return f"{plan_message}\n\n" + "\n".join(summary_lines)
+
+
+def _run_preflight_checks(
+    workspace_root: Path,
+    *,
+    allow_dirty: bool,
+    runner: _CommandRunner | None = None,
+) -> None:
+    """Execute publish pre-flight checks for ``workspace_root``."""
+    command_runner = runner or _invoke
+    _verify_clean_working_tree(
+        workspace_root, allow_dirty=allow_dirty, runner=command_runner
+    )
+
+    with tempfile.TemporaryDirectory(prefix="lading-preflight-target-") as target:
+        target_path = Path(target)
+        extra_args = (
+            "--workspace",
+            "--all-targets",
+            f"--target-dir={target_path}",
+        )
+        _run_cargo_preflight(
+            workspace_root, "check", runner=command_runner, extra_args=extra_args
+        )
+        _run_cargo_preflight(
+            workspace_root, "test", runner=command_runner, extra_args=extra_args
+        )
+
+
+def _verify_clean_working_tree(
+    workspace_root: Path, *, allow_dirty: bool, runner: _CommandRunner
+) -> None:
+    """Ensure ``workspace_root`` has no uncommitted changes unless allowed."""
+    if allow_dirty:
+        return
+
+    exit_code, stdout, stderr = runner(
+        ("git", "status", "--porcelain"),
+        cwd=workspace_root,
+    )
+    if exit_code != 0:
+        detail = (stderr or stdout).strip()
+        message = (
+            "Failed to verify workspace state; is this a git repository?"
+            if "not a git repository" in detail.lower()
+            else "Failed to verify workspace state with git status"
+        )
+        if detail:
+            message = f"{message}: {detail}"
+        raise PublishPreflightError(message)
+    if stdout.strip():
+        message = (
+            "Workspace has uncommitted changes; commit or stash them "
+            "before publishing or re-run with --allow-dirty."
+        )
+        raise PublishPreflightError(message)
+
+
+def _run_cargo_preflight(
+    workspace_root: Path,
+    subcommand: typ.Literal["check", "test"],
+    *,
+    runner: _CommandRunner,
+    extra_args: tuple[str, ...] | None = None,
+) -> None:
+    """Run ``cargo <subcommand>`` inside ``workspace_root``."""
+    arguments = extra_args or ("--workspace", "--all-targets")
+    exit_code, stdout, stderr = runner(
+        ("cargo", subcommand, *arguments),
+        cwd=workspace_root,
+    )
+    if exit_code != 0:
+        detail = (stderr or stdout).strip()
+        message = f"Pre-flight cargo {subcommand} failed with exit code {exit_code}"
+        if detail:
+            message = f"{message}: {detail}"
+        raise PublishPreflightError(message)
+
+
+def _invoke(
+    command: typ.Sequence[str], *, cwd: Path | None = None
+) -> tuple[int, str, str]:
+    """Execute ``command`` and return the exit status and decoded streams."""
+    if _should_use_cmd_mox_stub():
+        return _invoke_via_cmd_mox(command, cwd)
+
+    program, args = _split_command(command)
+    try:
+        bound = local[program]
+    except CommandNotFound as exc:
+        message = f"{program} executable not found while running pre-flight checks"
+        raise PublishPreflightError(message) from exc
+    if args:
+        bound = bound[list(args)]
+    kwargs: dict[str, typ.Any] = {"retcode": None}
+    if cwd is not None:
+        kwargs["cwd"] = str(cwd)
+    exit_code, stdout, stderr = bound.run(**kwargs)
+    return (
+        exit_code,
+        metadata_module._coerce_text(stdout),
+        metadata_module._coerce_text(stderr),
+    )
+
+
+def _split_command(command: typ.Sequence[str]) -> tuple[str, tuple[str, ...]]:
+    """Return the program and argument tuple for ``command``."""
+    if not command:
+        message = "Command sequence must contain at least one entry"
+        raise PublishPreflightError(message)
+    program = command[0]
+    args = tuple(command[1:])
+    return program, args
+
+
+def _should_use_cmd_mox_stub() -> bool:
+    """Return ``True`` when publish invocations should use cmd-mox."""
+    stub_env_val = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR, "")
+    return stub_env_val.lower() in {"1", "true", "yes", "on"}
+
+
+def _invoke_via_cmd_mox(
+    command: typ.Sequence[str], cwd: Path | None
+) -> tuple[int, str, str]:
+    """Route ``command`` through the cmd-mox IPC server when enabled."""
+    try:
+        ipc, env_mod = metadata_module._load_cmd_mox_modules()
+        timeout = metadata_module._resolve_cmd_mox_timeout(
+            os.environ.get(env_mod.CMOX_IPC_TIMEOUT_ENV)
+        )
+    except metadata_module.CargoMetadataError as exc:  # pragma: no cover - defensive
+        raise PublishPreflightError(str(exc)) from exc
+    if not os.environ.get(env_mod.CMOX_IPC_SOCKET_ENV):
+        message = (
+            "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+        )
+        raise PublishPreflightError(message)
+    program, args = _split_command(command)
+    invocation_program, invocation_args = _normalise_cmd_mox_command(program, args)
+    invocation = ipc.Invocation(
+        command=invocation_program,
+        args=invocation_args,
+        stdin="",
+        env=metadata_module._build_invocation_environment(
+            None if cwd is None else str(cwd)
+        ),
+    )
+    response = ipc.invoke_server(invocation, timeout)
+    return (
+        response.exit_code,
+        metadata_module._coerce_text(response.stdout),
+        metadata_module._coerce_text(response.stderr),
+    )
+
+
+def _normalise_cmd_mox_command(
+    program: str, args: tuple[str, ...]
+) -> tuple[str, list[str]]:
+    """Return the command name and argument list for cmd-mox invocations."""
+    invocation_program = program
+    invocation_args = list(args)
+    if program == "cargo" and args:
+        invocation_program = f"{program}::{args[0]}"
+        invocation_args = list(args[1:])
+    return invocation_program, invocation_args

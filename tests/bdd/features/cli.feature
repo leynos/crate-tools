@@ -140,6 +140,43 @@ Feature: Lading CLI scaffolding
     Then the CLI exits with code 1
     And the stderr contains "Cannot determine publish order due to dependency cycle involving: alpha, beta"
 
+  Scenario: Publish command aborts when cargo check fails
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And cargo check fails during publish pre-flight
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Pre-flight cargo check failed with exit code 1: cargo check failed"
+
+  Scenario: Publish command aborts when cargo test fails
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And cargo test fails during publish pre-flight
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Pre-flight cargo test failed with exit code 1: cargo test failed"
+
+  Scenario: Publish pre-flight aborts when cmd-mox socket is missing
+    Given a workspace directory with configuration
+    And cmd-mox IPC socket is unset
+    When I run publish pre-flight checks for that workspace
+    Then the publish pre-flight error contains "cmd-mox stub requested for publish pre-flight but CMOX_IPC_SOCKET is unset"
+
+  Scenario: Publish command rejects dirty workspaces without allow-dirty
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has uncommitted changes
+    When I invoke lading publish with that workspace
+    Then the CLI exits with code 1
+    And the stderr contains "Workspace has uncommitted changes; commit or stash them before publishing or re-run with --allow-dirty."
+
+  Scenario: Publish command allows dirty workspaces with allow-dirty flag
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace has uncommitted changes
+    When I invoke lading publish with that workspace using --allow-dirty
+    Then the publish command prints the publish plan for "alpha"
+
   Scenario: Running the bump command without configuration
     Given a workspace directory without configuration
     When I invoke lading bump 1.2.3 with that workspace
