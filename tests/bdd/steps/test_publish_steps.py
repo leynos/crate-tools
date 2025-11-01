@@ -168,8 +168,15 @@ def _invoke_publish_with_options(
     """Enable cmd-mox stubs and run the publish CLI with optional arguments."""
     from .test_common_steps import _run_cli
 
+    previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
     os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
-    return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
+    try:
+        return _run_cli(repo_root, workspace_directory, "publish", *extra_args)
+    finally:
+        if previous is None:
+            os.environ.pop(metadata_module.CMD_MOX_STUB_ENV_VAR, None)
+        else:
+            os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = previous
 
 
 @when("I invoke lading publish with that workspace", target_fixture="cli_run")
