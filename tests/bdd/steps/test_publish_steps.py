@@ -158,12 +158,14 @@ def _register_preflight_commands(
 def _invoke_publish_with_options(
     repo_root: Path,
     workspace_directory: Path,
-    *,
-    extra_args: tuple[str, ...] = (),
+    cmd_mox: CmdMox,
+    preflight_overrides: dict[tuple[str, ...], _CommandResponse],
+    *extra_args: str,
 ) -> dict[str, typ.Any]:
-    """Enable cmd-mox stubs and run the publish CLI with optional arguments."""
+    """Register preflight doubles, enable stubs, and run the CLI."""
     from .test_common_steps import _run_cli
 
+    _register_preflight_commands(cmd_mox, preflight_overrides)
     previous = os.environ.get(metadata_module.CMD_MOX_STUB_ENV_VAR)
     os.environ[metadata_module.CMD_MOX_STUB_ENV_VAR] = "1"
     try:
@@ -183,8 +185,9 @@ def when_invoke_lading_publish(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI via ``python -m`` and capture the result."""
-    _register_preflight_commands(cmd_mox, preflight_overrides)
-    return _invoke_publish_with_options(repo_root, workspace_directory)
+    return _invoke_publish_with_options(
+        repo_root, workspace_directory, cmd_mox, preflight_overrides
+    )
 
 
 @when(
@@ -198,9 +201,8 @@ def when_invoke_lading_publish_allow_dirty(
     preflight_overrides: dict[tuple[str, ...], _CommandResponse],
 ) -> dict[str, typ.Any]:
     """Execute the publish CLI with ``--allow-dirty`` enabled."""
-    _register_preflight_commands(cmd_mox, preflight_overrides)
     return _invoke_publish_with_options(
-        repo_root, workspace_directory, extra_args=("--allow-dirty",)
+        repo_root, workspace_directory, cmd_mox, preflight_overrides, "--allow-dirty"
     )
 
 
