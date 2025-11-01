@@ -103,7 +103,7 @@ def _validate_stub_arguments(
 
 
 def _resolve_preflight_expectation(
-    command: tuple[str, ...]
+    command: tuple[str, ...],
 ) -> tuple[str, tuple[str, ...]]:
     """Return the cmd-mox program and argument prefix for ``command``."""
     program, *args = command
@@ -116,9 +116,7 @@ def _resolve_preflight_expectation(
 def _make_preflight_handler(
     response: _CommandResponse,
     expected_arguments: tuple[str, ...],
-) -> typ.Callable[[
-    _CmdInvocation
-], tuple[str, str, int]]:
+) -> typ.Callable[[_CmdInvocation], tuple[str, str, int]]:
     """Build a cmd-mox handler that validates argument prefixes."""
 
     def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
@@ -151,9 +149,7 @@ def _register_preflight_commands(
     }
     defaults.update(overrides)
     for command, response in defaults.items():
-        expectation_program, expectation_args = _resolve_preflight_expectation(
-            command
-        )
+        expectation_program, expectation_args = _resolve_preflight_expectation(command)
         cmd_mox.stub(expectation_program).runs(
             _make_preflight_handler(response, expectation_args)
         )
