@@ -102,6 +102,32 @@ def _validate_stub_arguments(
             raise AssertionError(message)
 
 
+def _resolve_preflight_expectation(
+    command: tuple[str, ...]
+) -> tuple[str, tuple[str, ...]]:
+    """Return the cmd-mox program and argument prefix for ``command``."""
+    program, *args = command
+    argument_tuple = tuple(args)
+    if _is_cargo_action_command(program, argument_tuple):
+        return f"cargo::{argument_tuple[0]}", argument_tuple[1:]
+    return program, argument_tuple
+
+
+def _make_preflight_handler(
+    response: _CommandResponse,
+    expected_arguments: tuple[str, ...],
+) -> typ.Callable[[
+    _CmdInvocation
+], tuple[str, str, int]]:
+    """Build a cmd-mox handler that validates argument prefixes."""
+
+    def _handler(invocation: _CmdInvocation) -> tuple[str, str, int]:
+        _validate_stub_arguments(expected_arguments, tuple(invocation.args))
+        return (response.stdout, response.stderr, response.exit_code)
+
+    return _handler
+
+
 def _register_preflight_commands(
     cmd_mox: CmdMox,
     overrides: dict[tuple[str, ...], _CommandResponse],
@@ -125,24 +151,12 @@ def _register_preflight_commands(
     }
     defaults.update(overrides)
     for command, response in defaults.items():
-        program, *args = command
-        expectation_program = program
-        expectation_args = tuple(args)
-        if _is_cargo_action_command(program, tuple(args)):
-            expectation_program = f"cargo::{args[0]}"
-            expectation_args = tuple(args[1:])
-        double = cmd_mox.stub(expectation_program)
-
-        def _handler(
-            invocation: _CmdInvocation,
-            *,
-            _response: _CommandResponse = response,
-            _expected: tuple[str, ...] = expectation_args,
-        ) -> tuple[str, str, int]:
-            _validate_stub_arguments(_expected, tuple(invocation.args))
-            return (_response.stdout, _response.stderr, _response.exit_code)
-
-        double.runs(_handler)
+        expectation_program, expectation_args = _resolve_preflight_expectation(
+            command
+        )
+        cmd_mox.stub(expectation_program).runs(
+            _make_preflight_handler(response, expectation_args)
+        )
 
 
 def _invoke_publish_with_options(
