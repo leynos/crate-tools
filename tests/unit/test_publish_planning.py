@@ -419,11 +419,28 @@ def test_plan_publication_rejects_incomplete_configured_order(
     assert "beta" in message
 
 
-def test_plan_publication_rejects_duplicate_configured_crates(
+@pytest.mark.parametrize(
+    ("order", "expected_error"),
+    [
+        pytest.param(
+            ("alpha", "alpha"),
+            "Duplicate publish.order entries: alpha",
+            id="rejects_duplicate",
+        ),
+        pytest.param(
+            ("alpha", "omega"),
+            "publish.order references crates outside the publishable set",
+            id="rejects_unknown",
+        ),
+    ],
+)
+def test_plan_publication_order_validation_errors(
     planning_fixtures: PlanningFixtures,
     make_dependency: typ.Callable[[str], WorkspaceDependency],
+    order: tuple[str, ...],
+    expected_error: str,
 ) -> None:
-    """Repeated publish.order entries raise a duplicate configuration error."""
+    """Invalid publish.order configurations trigger informative errors."""
     fx = planning_fixtures
     alpha, _, _ = _make_dependency_chain(
         fx.tmp_path.resolve(),
@@ -437,33 +454,7 @@ def test_plan_publication_rejects_duplicate_configured_crates(
             fx.make_workspace,
             fx.make_config,
             (alpha,),
-            order=("alpha", "alpha"),
+            order=order,
         )
 
-    assert "Duplicate publish.order entries: alpha" in str(excinfo.value)
-
-
-def test_plan_publication_rejects_unknown_configured_crates(
-    planning_fixtures: PlanningFixtures,
-    make_dependency: typ.Callable[[str], WorkspaceDependency],
-) -> None:
-    """Names outside the publishable set trigger an informative error."""
-    fx = planning_fixtures
-    alpha, _, _ = _make_dependency_chain(
-        fx.tmp_path.resolve(),
-        make_crate=fx.make_crate,
-        make_dependency=make_dependency,
-    )
-
-    with pytest.raises(publish.PublishPlanError) as excinfo:
-        _plan_with_crates(
-            fx.tmp_path,
-            fx.make_workspace,
-            fx.make_config,
-            (alpha,),
-            order=("alpha", "omega"),
-        )
-
-    assert "publish.order references crates outside the publishable set" in str(
-        excinfo.value
-    )
+    assert expected_error in str(excinfo.value)
